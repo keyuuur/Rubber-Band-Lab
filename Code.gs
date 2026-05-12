@@ -1,0 +1,548 @@
+var APP_VERSION = '2026-05-12-first-pass';
+var SCORE_VERSION = 'rbbl-score-v1';
+var TEACHER_EMAIL = 'patelk07@psdr3.org';
+var ALLOWED_PERIODS = ['1st hour', '7th hour'];
+
+var SHEET_NAMES = {
+  raw: 'Submissions_Raw',
+  best: 'Best_Scores',
+  dashboard: 'Dashboard',
+  settings: 'Settings',
+  log: 'Troubleshooting_Log'
+};
+
+var RAW_COLUMNS = [
+  'Timestamp', 'Submission_ID', 'Client_Attempt_ID', 'Group_Key', 'Period', 'Group_Name', 'Member_Names',
+  'Score_Total', 'Score_Safety', 'Score_Round1_Data', 'Score_Round1_Science', 'Score_Round2_Video',
+  'Score_FBD', 'Score_Conservation', 'Score_Final', 'Percent',
+  'Emergency_Mode_Used', 'Needs_Review', 'Review_Reasons', 'App_Version', 'Score_Version', 'User_Agent',
+  'Prediction_Choice', 'Prediction_Explanation',
+  'Safety_Pompom_Only', 'Safety_Not_At_People', 'Setup_Basket_Backboard', 'Setup_Launch_Line', 'Setup_Round1_6ft', 'Setup_Video_Required',
+  'R1_Small_T1', 'R1_Small_T2', 'R1_Small_T3', 'R1_Medium_T1', 'R1_Medium_T2', 'R1_Medium_T3', 'R1_Large_T1', 'R1_Large_T2', 'R1_Large_T3',
+  'R1_Pattern_Choice', 'R1_Most_Elastic_Potential_Choice', 'R1_Best_For_6ft_Choice', 'Energy_Blank_1', 'Energy_Blank_2',
+  'R2_3ft_Stretch', 'R2_3ft_Result', 'R2_3ft_Video', 'R2_6ft_Stretch', 'R2_6ft_Result', 'R2_6ft_Video', 'R2_9ft_Stretch', 'R2_9ft_Result', 'R2_9ft_Video',
+  'Video_Email_Confirmed', 'Video_Sender_Email', 'Video_Clip_Description',
+  'FBD_Before_Up', 'FBD_Before_Down', 'FBD_Air_Down', 'FBD_Air_Back',
+  'Conservation_Q1', 'Conservation_Q2', 'Conservation_Q3', 'Final_Main_Idea', 'Final_Farther_Baskets_Stretch',
+  'Raw_JSON'
+];
+
+var BEST_COLUMNS = [
+  'Group_Key', 'Period', 'Group_Name', 'Member_Names', 'Best_Score_Total', 'Percent', 'Best_Submission_ID',
+  'Best_Timestamp', 'Last_Submission_ID', 'Last_Timestamp', 'Submission_Count', 'Video_Email_Confirmed',
+  'Video_Sender_Email', 'Needs_Review', 'Review_Reasons', 'Notes'
+];
+
+var LOG_COLUMNS = ['Timestamp', 'Type', 'Message', 'Details'];
+
+function doGet() {
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('CPS Rubber Band Basket Launch')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function getSettings() {
+  ensureSheets_();
+  return {
+    ok: true,
+    appVersion: APP_VERSION,
+    scoreVersion: SCORE_VERSION,
+    teacherEmail: TEACHER_EMAIL,
+    allowedPeriods: ALLOWED_PERIODS
+  };
+}
+
+function submitLab(payload) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var cleanPayload = sanitizePayload_(payload || {});
+    var sheets = ensureSheets_();
+    var validation = validateSubmission_(cleanPayload);
+    if (!validation.ok) {
+      logTrouble_(sheets.log, 'VALIDATION_FAILURE', validation.message, validation);
+      return validation;
+    }
+
+    var duplicate = findDuplicateAttempt_(sheets.raw, cleanPayload.client_attempt_id);
+    if (duplicate) {
+      return {
+        ok: true,
+        duplicate: true,
+        message: 'This attempt was already submitted. Returning the saved submission.',
+        submissionId: duplicate.Submission_ID,
+        timestamp: duplicate.Timestamp,
+        score: {
+          total: Number(duplicate.Score_Total) || 0,
+          percent: Number(duplicate.Percent) || 0
+        },
+        needsReview: duplicate.Needs_Review === true || duplicate.Needs_Review === 'TRUE',
+        reviewReasons: duplicate.Review_Reasons || ''
+      };
+    }
+
+    var score = scoreSubmission(cleanPayload);
+    var timestamp = new Date();
+    var submissionId = generateSubmissionId_();
+    var groupKey = normalizeGroupKey_(cleanPayload.period, cleanPayload.group_name);
+    var review = buildReviewFlags_(cleanPayload, score);
+    var rawRecord = buildRawRecord_(timestamp, submissionId, groupKey, cleanPayload, score, review);
+
+    appendRawSubmission_(sheets.raw, rawRecord);
+    upsertBestScore_(sheets.best, rawRecord);
+    rebuildDashboard_(sheets.dashboard, sheets.best);
+
+    return {
+      ok: true,
+      duplicate: false,
+      message: 'Submitted to Mr. Patel\'s Sheet.',
+      submissionId: submissionId,
+      timestamp: timestamp.toISOString(),
+      score: score,
+      needsReview: review.needsReview,
+      reviewReasons: review.reasons.join('; ')
+    };
+  } catch (err) {
+    try {
+      var safeSheets = ensureSheets_();
+      logTrouble_(safeSheets.log, 'SERVER_ERROR', err && err.message ? err.message : String(err), {
+        stack: err && err.stack ? err.stack : '',
+        payload: payload
+      });
+    } catch (logErr) {
+      // If logging fails, still return a clear student-safe message.
+    }
+    return {
+      ok: false,
+      errorCode: 'SERVER_ERROR',
+      message: 'The Sheet did not save this time. Keep your answers and show Backup Proof Only to Mr. Patel.'
+    };
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (ignored) {}
+  }
+}
+
+function scoreSubmission(payload) {
+  payload = payload || {};
+  var score = {
+    safety: 0,
+    round1Data: 0,
+    round1Science: 0,
+    round2Video: 0,
+    fbd: 0,
+    conservation: 0,
+    finalConclusion: 0,
+    total: 0,
+    percent: 0
+  };
+
+  var safetyFields = [
+    'safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard',
+    'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'
+  ];
+  score.safety = safetyFields.every(function(field) { return isYesish_(payload[field]); }) ? 2 : 0;
+
+  var r1Fields = [
+    'r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3',
+    'r1_large_t1', 'r1_large_t2', 'r1_large_t3'
+  ];
+  var r1Count = countFilled_(payload, r1Fields);
+  score.round1Data = r1Count >= 9 ? 3 : (r1Count >= 6 ? 2 : (r1Count >= 3 ? 1 : 0));
+
+  if (equalsChoice_(payload.r1_pattern_choice, 'More stretch usually made the pom-pom go farther.')) score.round1Science += 1;
+  if (equalsChoice_(payload.r1_most_elastic_potential_choice, 'Large stretch')) score.round1Science += 1;
+  if (equalsChoice_(payload.energy_blank_1, 'elastic') && equalsChoice_(payload.energy_blank_2, 'kinetic')) score.round1Science += 1;
+
+  var r2Fields = [
+    'r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video',
+    'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video',
+    'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video'
+  ];
+  score.round2Video = countFilled_(payload, r2Fields) === r2Fields.length ? 2 : 0;
+  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && hasText_(payload.video_sender_email)) score.round2Video += 1;
+
+  if (equalsChoice_(payload.fbd_before_up, 'Normal force')) score.fbd += 1;
+  if (equalsChoice_(payload.fbd_before_down, 'Gravity')) score.fbd += 1;
+  if (equalsChoice_(payload.fbd_air_down, 'Gravity')) score.fbd += 1;
+  if (equalsChoice_(payload.fbd_air_back, 'Air resistance')) score.fbd += 1;
+
+  if (equalsChoice_(payload.conservation_q1, 'False')) score.conservation += 1;
+  if (equalsChoice_(payload.conservation_q2, 'True')) score.conservation += 1;
+  if (equalsChoice_(payload.conservation_q3, 'True')) score.conservation += 1;
+
+  if (String(payload.final_main_idea || '').charAt(0).toUpperCase() === 'A') score.finalConclusion += 1;
+  if (equalsChoice_(payload.final_farther_baskets_stretch, 'more')) score.finalConclusion += 1;
+
+  score.total = score.safety + score.round1Data + score.round1Science + score.round2Video + score.fbd + score.conservation + score.finalConclusion;
+  score.percent = Math.round((score.total / 20) * 100);
+  return score;
+}
+
+function ensureSheets_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('No active spreadsheet is attached to this Apps Script project.');
+  }
+
+  var raw = ensureSheetWithHeaders_(ss, SHEET_NAMES.raw, RAW_COLUMNS);
+  var best = ensureSheetWithHeaders_(ss, SHEET_NAMES.best, BEST_COLUMNS);
+  var dashboard = ss.getSheetByName(SHEET_NAMES.dashboard) || ss.insertSheet(SHEET_NAMES.dashboard);
+  var settings = ss.getSheetByName(SHEET_NAMES.settings) || ss.insertSheet(SHEET_NAMES.settings);
+  var log = ensureSheetWithHeaders_(ss, SHEET_NAMES.log, LOG_COLUMNS);
+
+  writeSettings_(settings);
+  rebuildDashboard_(dashboard, best);
+
+  return { ss: ss, raw: raw, best: best, dashboard: dashboard, settings: settings, log: log };
+}
+
+function appendRawSubmission_(sheet, record) {
+  var headers = getHeaders_(sheet);
+  sheet.appendRow(headers.map(function(header) {
+    return record[header] !== undefined ? record[header] : '';
+  }));
+}
+
+function upsertBestScore_(sheet, rawRecord) {
+  var headers = getHeaders_(sheet);
+  var groupKeyIndex = headers.indexOf('Group_Key');
+  var values = sheet.getDataRange().getValues();
+  var existingRow = -1;
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][groupKeyIndex] === rawRecord.Group_Key) {
+      existingRow = i + 1;
+      break;
+    }
+  }
+
+  var currentCount = 0;
+  var shouldReplaceBest = true;
+  if (existingRow > -1) {
+    var row = values[existingRow - 1];
+    currentCount = Number(row[headers.indexOf('Submission_Count')]) || 0;
+    var oldBest = Number(row[headers.indexOf('Best_Score_Total')]) || 0;
+    shouldReplaceBest = rawRecord.Score_Total > oldBest || rawRecord.Score_Total === oldBest;
+  }
+
+  var record = {};
+  if (existingRow > -1) {
+    headers.forEach(function(header, index) {
+      record[header] = values[existingRow - 1][index];
+    });
+  }
+
+  if (shouldReplaceBest) {
+    record.Group_Key = rawRecord.Group_Key;
+    record.Period = rawRecord.Period;
+    record.Group_Name = rawRecord.Group_Name;
+    record.Member_Names = rawRecord.Member_Names;
+    record.Best_Score_Total = rawRecord.Score_Total;
+    record.Percent = rawRecord.Percent;
+    record.Best_Submission_ID = rawRecord.Submission_ID;
+    record.Best_Timestamp = rawRecord.Timestamp;
+    record.Video_Email_Confirmed = rawRecord.Video_Email_Confirmed;
+    record.Video_Sender_Email = rawRecord.Video_Sender_Email;
+    record.Needs_Review = rawRecord.Needs_Review;
+    record.Review_Reasons = rawRecord.Review_Reasons;
+  }
+
+  record.Last_Submission_ID = rawRecord.Submission_ID;
+  record.Last_Timestamp = rawRecord.Timestamp;
+  record.Submission_Count = currentCount + 1;
+  record.Notes = record.Notes || '';
+
+  var rowValues = headers.map(function(header) {
+    return record[header] !== undefined ? record[header] : '';
+  });
+
+  if (existingRow > -1) {
+    sheet.getRange(existingRow, 1, 1, headers.length).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+}
+
+function normalizeGroupKey_(period, groupName) {
+  return normalizeText_(period) + '|' + normalizeText_(groupName);
+}
+
+function generateSubmissionId_() {
+  return 'RBBL-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss') + '-' + Math.floor(Math.random() * 9000 + 1000);
+}
+
+function validateSubmission_(payload) {
+  var missing = [];
+  if (!hasText_(payload.period)) missing.push('period');
+  if (!hasText_(payload.group_name)) missing.push('group_name');
+  if (!hasText_(payload.client_attempt_id)) missing.push('client_attempt_id');
+
+  if (missing.length) {
+    return {
+      ok: false,
+      errorCode: 'MISSING_REQUIRED_FIELDS',
+      message: 'Period, group name, and attempt ID are required.',
+      missingFields: missing
+    };
+  }
+
+  if (ALLOWED_PERIODS.indexOf(payload.period) === -1) {
+    return {
+      ok: false,
+      errorCode: 'INVALID_PERIOD',
+      message: 'Choose 1st hour or 7th hour.',
+      allowedPeriods: ALLOWED_PERIODS
+    };
+  }
+
+  if (countMemberNames_(payload.member_names) < 2) {
+    return {
+      ok: false,
+      errorCode: 'NOT_ENOUGH_MEMBERS',
+      message: 'Enter at least 2 group member names. Groups should be 3-4. Ask your teacher if your group has only 2.'
+    };
+  }
+
+  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && !hasText_(payload.video_sender_email)) {
+    return {
+      ok: false,
+      errorCode: 'VIDEO_EMAIL_REQUIRED',
+      message: 'If your group emailed video evidence, enter the school email that sent it.'
+    };
+  }
+
+  return { ok: true };
+}
+
+function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, review) {
+  var record = {
+    Timestamp: timestamp,
+    Submission_ID: submissionId,
+    Client_Attempt_ID: payload.client_attempt_id,
+    Group_Key: groupKey,
+    Period: payload.period,
+    Group_Name: payload.group_name,
+    Member_Names: payload.member_names,
+    Score_Total: score.total,
+    Score_Safety: score.safety,
+    Score_Round1_Data: score.round1Data,
+    Score_Round1_Science: score.round1Science,
+    Score_Round2_Video: score.round2Video,
+    Score_FBD: score.fbd,
+    Score_Conservation: score.conservation,
+    Score_Final: score.finalConclusion,
+    Percent: score.percent,
+    Emergency_Mode_Used: payload.emergency_mode_used === true,
+    Needs_Review: review.needsReview,
+    Review_Reasons: review.reasons.join('; '),
+    App_Version: APP_VERSION,
+    Score_Version: SCORE_VERSION,
+    User_Agent: payload.user_agent || '',
+    Raw_JSON: JSON.stringify(payload)
+  };
+
+  var fieldMap = {
+    Prediction_Choice: 'prediction_choice',
+    Prediction_Explanation: 'prediction_explanation',
+    Safety_Pompom_Only: 'safety_pompom_only',
+    Safety_Not_At_People: 'safety_not_at_people',
+    Setup_Basket_Backboard: 'setup_basket_backboard',
+    Setup_Launch_Line: 'setup_launch_line',
+    Setup_Round1_6ft: 'setup_round1_6ft',
+    Setup_Video_Required: 'setup_video_required',
+    R1_Small_T1: 'r1_small_t1',
+    R1_Small_T2: 'r1_small_t2',
+    R1_Small_T3: 'r1_small_t3',
+    R1_Medium_T1: 'r1_medium_t1',
+    R1_Medium_T2: 'r1_medium_t2',
+    R1_Medium_T3: 'r1_medium_t3',
+    R1_Large_T1: 'r1_large_t1',
+    R1_Large_T2: 'r1_large_t2',
+    R1_Large_T3: 'r1_large_t3',
+    R1_Pattern_Choice: 'r1_pattern_choice',
+    R1_Most_Elastic_Potential_Choice: 'r1_most_elastic_potential_choice',
+    R1_Best_For_6ft_Choice: 'r1_best_for_6ft_choice',
+    Energy_Blank_1: 'energy_blank_1',
+    Energy_Blank_2: 'energy_blank_2',
+    R2_3ft_Stretch: 'r2_3ft_stretch',
+    R2_3ft_Result: 'r2_3ft_result',
+    R2_3ft_Video: 'r2_3ft_video',
+    R2_6ft_Stretch: 'r2_6ft_stretch',
+    R2_6ft_Result: 'r2_6ft_result',
+    R2_6ft_Video: 'r2_6ft_video',
+    R2_9ft_Stretch: 'r2_9ft_stretch',
+    R2_9ft_Result: 'r2_9ft_result',
+    R2_9ft_Video: 'r2_9ft_video',
+    Video_Email_Confirmed: 'video_email_confirmed',
+    Video_Sender_Email: 'video_sender_email',
+    Video_Clip_Description: 'video_clip_description',
+    FBD_Before_Up: 'fbd_before_up',
+    FBD_Before_Down: 'fbd_before_down',
+    FBD_Air_Down: 'fbd_air_down',
+    FBD_Air_Back: 'fbd_air_back',
+    Conservation_Q1: 'conservation_q1',
+    Conservation_Q2: 'conservation_q2',
+    Conservation_Q3: 'conservation_q3',
+    Final_Main_Idea: 'final_main_idea',
+    Final_Farther_Baskets_Stretch: 'final_farther_baskets_stretch'
+  };
+
+  Object.keys(fieldMap).forEach(function(column) {
+    record[column] = payload[fieldMap[column]];
+  });
+
+  return record;
+}
+
+function buildReviewFlags_(payload, score) {
+  var reasons = [];
+  if (!equalsChoice_(payload.video_email_confirmed, 'Yes')) reasons.push('Video email not confirmed');
+  if (score.total < 12) reasons.push('Low score');
+  if (countFilled_(payload, ['r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3', 'r1_large_t1', 'r1_large_t2', 'r1_large_t3']) < 9) reasons.push('Round 1 trials incomplete');
+  if (countFilled_(payload, ['r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video', 'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video', 'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video']) < 9) reasons.push('Round 2 rows incomplete');
+  return { needsReview: reasons.length > 0, reasons: reasons };
+}
+
+function rebuildDashboard_(dashboardSheet, bestSheet) {
+  dashboardSheet.clear();
+  dashboardSheet.getRange(1, 1, 1, 7).setValues([['Period', 'Groups', 'Average Best Score', 'Video Confirmed', 'Needs Review', 'Last Updated', 'Teacher Email']]);
+
+  var bestValues = bestSheet.getDataRange().getValues();
+  if (bestValues.length < 2) {
+    dashboardSheet.getRange(2, 1, 1, 7).setValues([['No submissions yet', '', '', '', '', new Date(), TEACHER_EMAIL]]);
+    return;
+  }
+
+  var headers = bestValues[0];
+  var stats = {};
+  ALLOWED_PERIODS.forEach(function(period) {
+    stats[period] = { groups: 0, scoreSum: 0, video: 0, review: 0 };
+  });
+
+  for (var i = 1; i < bestValues.length; i++) {
+    var row = bestValues[i];
+    var period = row[headers.indexOf('Period')] || 'Unknown';
+    if (!stats[period]) stats[period] = { groups: 0, scoreSum: 0, video: 0, review: 0 };
+    stats[period].groups += 1;
+    stats[period].scoreSum += Number(row[headers.indexOf('Best_Score_Total')]) || 0;
+    if (row[headers.indexOf('Video_Email_Confirmed')] === 'Yes') stats[period].video += 1;
+    if (row[headers.indexOf('Needs_Review')] === true || row[headers.indexOf('Needs_Review')] === 'TRUE') stats[period].review += 1;
+  }
+
+  var summaryRows = Object.keys(stats).map(function(period) {
+    var s = stats[period];
+    return [period, s.groups, s.groups ? Math.round((s.scoreSum / s.groups) * 10) / 10 : '', s.video, s.review, new Date(), TEACHER_EMAIL];
+  });
+  dashboardSheet.getRange(2, 1, summaryRows.length, 7).setValues(summaryRows);
+
+  var detailStart = summaryRows.length + 4;
+  dashboardSheet.getRange(detailStart, 1, 1, BEST_COLUMNS.length).setValues([BEST_COLUMNS]);
+  dashboardSheet.getRange(detailStart + 1, 1, bestValues.length - 1, BEST_COLUMNS.length).setValues(bestValues.slice(1));
+  dashboardSheet.autoResizeColumns(1, Math.min(BEST_COLUMNS.length, 12));
+}
+
+function findDuplicateAttempt_(sheet, attemptId) {
+  var headers = getHeaders_(sheet);
+  var attemptIndex = headers.indexOf('Client_Attempt_ID');
+  if (attemptIndex === -1 || !attemptId) return null;
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][attemptIndex] === attemptId) {
+      var record = {};
+      headers.forEach(function(header, index) {
+        record[header] = values[i][index];
+      });
+      return record;
+    }
+  }
+  return null;
+}
+
+function ensureSheetWithHeaders_(ss, name, headers) {
+  var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
+  var currentHeaders = sheet.getLastColumn() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  } else if (currentHeaders.join('|') !== headers.join('|')) {
+    if (sheet.getMaxColumns() < headers.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+    }
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function writeSettings_(sheet) {
+  sheet.clear();
+  sheet.getRange(1, 1, 6, 2).setValues([
+    ['Setting', 'Value'],
+    ['Allowed_Periods', ALLOWED_PERIODS.join(', ')],
+    ['Teacher_Email', TEACHER_EMAIL],
+    ['App_Version', APP_VERSION],
+    ['Score_Version', SCORE_VERSION],
+    ['Last_Checked', new Date()]
+  ]);
+  sheet.setFrozenRows(1);
+}
+
+function logTrouble_(sheet, type, message, details) {
+  sheet.appendRow([new Date(), type, message, JSON.stringify(details || {})]);
+}
+
+function sanitizePayload_(payload) {
+  var cleaned = {};
+  Object.keys(payload || {}).forEach(function(key) {
+    var value = payload[key];
+    if (typeof value === 'string') {
+      cleaned[key] = value.trim();
+    } else {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned;
+}
+
+function getHeaders_(sheet) {
+  if (sheet.getLastColumn() === 0) return [];
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+}
+
+function countFilled_(payload, fields) {
+  return fields.reduce(function(total, field) {
+    return total + (hasText_(payload[field]) ? 1 : 0);
+  }, 0);
+}
+
+function countMemberNames_(memberNames) {
+  if (!hasText_(memberNames)) return 0;
+  return String(memberNames)
+    .split(/[\n,;]+/)
+    .map(function(name) { return name.trim(); })
+    .filter(function(name) { return name !== ''; })
+    .length;
+}
+
+function hasText_(value) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+function isYesish_(value) {
+  return value === true || String(value).toLowerCase() === 'true' || String(value).toLowerCase() === 'yes';
+}
+
+function equalsChoice_(actual, expected) {
+  return normalizeText_(actual) === normalizeText_(expected);
+}
+
+function normalizeText_(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}

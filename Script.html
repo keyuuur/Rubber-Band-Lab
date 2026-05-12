@@ -1,0 +1,630 @@
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'cps_rubber_band_lab_first_pass';
+  var teacherEmail = 'patelk07@psdr3.org';
+  var resultChoices = ['Made', 'Missed short', 'Missed long', 'Missed side'];
+  var stretchChoices = ['Small', 'Medium', 'Large'];
+  var forceChoices = ['', 'Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
+  var screens = [
+    { key: 'start', label: 'Start', render: renderStart },
+    { key: 'safety', label: 'Safety', render: renderSafety },
+    { key: 'prediction', label: 'Prediction', render: renderPrediction },
+    { key: 'round1', label: 'Round 1', render: renderRound1 },
+    { key: 'pattern', label: 'Round 1 Pattern', render: renderPattern },
+    { key: 'energy', label: 'Energy Vocabulary', render: renderEnergy },
+    { key: 'round2', label: 'Round 2', render: renderRound2 },
+    { key: 'video', label: 'Video Email', render: renderVideo },
+    { key: 'fbd', label: 'Free-Body Diagrams', render: renderFbd },
+    { key: 'conservation', label: 'Conservation', render: renderConservation },
+    { key: 'final', label: 'Final Conclusion', render: renderFinal },
+    { key: 'review', label: 'Review/Submit', render: renderReview }
+  ];
+
+  var state = loadState();
+  var host = document.getElementById('screenHost');
+  var backBtn = document.getElementById('backBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var resetBtn = document.getElementById('resetBtn');
+  var backupBtn = document.getElementById('backupBtn');
+
+  if (state.hadSavedWork) {
+    document.getElementById('resumeWarning').classList.remove('hidden');
+  }
+
+  render();
+
+  backBtn.addEventListener('click', function () {
+    if (state.mode === 'backup') {
+      returnToLabFromBackup();
+      return;
+    }
+    if (state.screenIndex > 0) {
+      state.screenIndex -= 1;
+      saveState();
+      render();
+    }
+  });
+
+  nextBtn.addEventListener('click', function () {
+    if (state.mode === 'submitted') {
+      return;
+    }
+    if (state.mode === 'backup') {
+      returnToLabFromBackup();
+      return;
+    }
+    if (screens[state.screenIndex].key === 'review') {
+      submitLab();
+      return;
+    }
+    var warning = getScreenWarning(screens[state.screenIndex].key);
+    if (warning && !window.confirm(warning + '\n\nKeep going anyway?')) {
+      return;
+    }
+    state.screenIndex = Math.min(state.screenIndex + 1, screens.length - 1);
+    saveState();
+    render();
+  });
+
+  resetBtn.addEventListener('click', function () {
+    if (window.confirm('Are you sure you want to clear this group\'s work?')) {
+      localStorage.removeItem(STORAGE_KEY);
+      state = freshState(false);
+      render();
+      document.getElementById('resumeWarning').classList.add('hidden');
+    }
+  });
+
+  backupBtn.addEventListener('click', function () {
+    showBackupProof();
+  });
+
+  function freshState(hadSavedWork) {
+    return {
+      screenIndex: 0,
+      mode: 'work',
+      responses: {
+        client_attempt_id: makeAttemptId()
+      },
+      submitted: null,
+      hadSavedWork: hadSavedWork
+    };
+  }
+
+  function loadState() {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return freshState(false);
+    try {
+      var parsed = JSON.parse(raw);
+      parsed.hadSavedWork = true;
+      parsed.responses = parsed.responses || {};
+      parsed.responses.client_attempt_id = parsed.responses.client_attempt_id || makeAttemptId();
+      parsed.screenIndex = Math.min(Math.max(Number(parsed.screenIndex) || 0, 0), screens.length - 1);
+      parsed.mode = parsed.mode || 'work';
+      return parsed;
+    } catch (err) {
+      return freshState(false);
+    }
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      screenIndex: state.screenIndex,
+      mode: state.mode,
+      responses: state.responses,
+      submitted: state.submitted
+    }));
+  }
+
+  function render() {
+    if (state.mode === 'submitted' && state.submitted) {
+      showSubmittedProof(state.submitted);
+      return;
+    }
+    if (state.mode === 'backup') {
+      showBackupProof();
+      return;
+    }
+
+    var screen = screens[state.screenIndex];
+    document.getElementById('stepLabel').textContent = screen.label;
+    document.getElementById('stepCount').textContent = (state.screenIndex + 1) + ' of ' + screens.length;
+    document.getElementById('progressFill').style.width = Math.round(((state.screenIndex + 1) / screens.length) * 100) + '%';
+
+    host.innerHTML = screen.render();
+    backBtn.textContent = 'Back';
+    backBtn.disabled = state.screenIndex === 0;
+    nextBtn.disabled = false;
+    nextBtn.textContent = screen.key === 'review' ? 'Submit Lab' : 'Next';
+
+    bindInputs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function bindInputs() {
+    host.querySelectorAll('[data-field]').forEach(function (input) {
+      var field = input.getAttribute('data-field');
+      if (input.type === 'checkbox') {
+        input.checked = !!state.responses[field];
+      } else if (input.type === 'radio') {
+        input.checked = state.responses[field] === input.value;
+      } else {
+        input.value = state.responses[field] || '';
+      }
+      input.addEventListener('input', handleInput);
+      input.addEventListener('change', handleInput);
+    });
+
+    host.querySelectorAll('[data-choice-field]').forEach(function (button) {
+      var field = button.getAttribute('data-choice-field');
+      var value = button.getAttribute('data-choice-value');
+      button.classList.toggle('selected', state.responses[field] === value);
+      button.addEventListener('click', function () {
+        state.responses[field] = value;
+        saveState();
+        render();
+      });
+    });
+
+    host.querySelectorAll('[data-copy]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        copyText(button.getAttribute('data-copy'));
+      });
+    });
+  }
+
+  function handleInput(event) {
+    var input = event.target;
+    var field = input.getAttribute('data-field');
+    if (!field) return;
+    state.responses[field] = input.type === 'checkbox' ? input.checked : input.value;
+    saveState();
+  }
+
+  function renderStart() {
+    return screenWrap('Start: Group Info',
+      'Enter your group information. Your group will submit one lab write-up together.',
+      '<div class="field-grid">' +
+        selectField('Period', 'period', ['', '1st hour', '7th hour'], 'Choose period') +
+        textField('Group name', 'group_name', 'Example: Energy Eagles') +
+        textAreaField('Group member names', 'member_names', 'First names are enough. Put each name on a new line.') +
+      '</div>' +
+      '<div class="mini-note">Work in groups of 3-4. One submission per group. Ask your teacher if your group has only 2.</div>');
+  }
+
+  function renderSafety() {
+    var checks = [
+      ['safety_pompom_only', 'We are using a soft pom-pom only.'],
+      ['safety_not_at_people', 'We will not aim at people.'],
+      ['setup_basket_backboard', 'Our basket and backboard are set up.'],
+      ['setup_launch_line', 'Our launch line is marked.'],
+      ['setup_round1_6ft', 'During Round 1, the basket will stay at 6 ft.'],
+      ['setup_video_required', 'We will record at least one short video clip and email it to the teacher.']
+    ];
+    return screenWrap('Safety and Setup Check',
+      'Check each box before starting. These rules keep the lab safe and fair.',
+      '<div class="check-list">' + checks.map(function (item) {
+        return '<label class="check-row"><input type="checkbox" data-field="' + item[0] + '"><span>' + item[1] + '</span></label>';
+      }).join('') + '</div>');
+  }
+
+  function renderPrediction() {
+    return screenWrap('Prediction',
+      'What do you think will happen when the rubber band is pulled back farther?',
+      choiceList('prediction_choice', [
+        'The pom-pom will usually go farther.',
+        'The pom-pom will usually go shorter.',
+        'The pullback will not matter much.'
+      ]) + textAreaField('I think this because...', 'prediction_explanation', 'Optional short answer'));
+  }
+
+  function renderRound1() {
+    var html = '<div class="meaning-grid">' +
+      '<div><strong>Made:</strong> lands in the basket.</div>' +
+      '<div><strong>Short:</strong> did not reach the basket.</div>' +
+      '<div><strong>Long:</strong> went past the basket.</div>' +
+      '<div><strong>Side:</strong> missed left or right.</div>' +
+      '<div><strong>Bank shots:</strong> Bank shots count as Made if the pom-pom lands in the basket.</div>' +
+      '</div>';
+    html += '<div class="cards">';
+    ['small', 'medium', 'large'].forEach(function (stretch) {
+      html += '<section class="card"><h3>' + cap(stretch) + ' Stretch</h3>';
+      for (var i = 1; i <= 3; i++) {
+        html += '<p><strong>Trial ' + i + '</strong></p>' + tapChoices('r1_' + stretch + '_t' + i, resultChoices);
+      }
+      html += '</section>';
+    });
+    html += '</div>';
+    return screenWrap('Round 1: Calibration Test at 6 ft',
+      'Keep the basket at 6 ft. Use the same pom-pom, rubber band, launch line, and basket. Change only the amount of stretch.',
+      html);
+  }
+
+  function renderPattern() {
+    return screenWrap('Round 1 Pattern Check',
+      'Pause after Round 1. Use your trial results to answer these.',
+      '<div class="mini-note">Checkpoint: Talk with your group before Round 2. More stretch usually stores more elastic potential energy.</div>' +
+      selectField('What pattern did your group notice?', 'r1_pattern_choice', ['', 'More stretch usually made the pom-pom go farther.', 'More stretch usually made the pom-pom go shorter.', 'Stretch did not seem to matter.'], 'Choose one') +
+      selectField('Which stretch stored the most elastic potential energy?', 'r1_most_elastic_potential_choice', ['', 'Small stretch', 'Medium stretch', 'Large stretch'], 'Choose one') +
+      selectField('Which stretch worked best for the 6 ft basket?', 'r1_best_for_6ft_choice', ['', 'Small stretch', 'Medium stretch', 'Large stretch', 'No clear best stretch'], 'Choose one'));
+  }
+
+  function renderEnergy() {
+    return screenWrap('Energy Vocabulary',
+      'Complete the energy sentences.',
+      selectField('A stretched rubber band stores _____ potential energy.', 'energy_blank_1', ['', 'elastic', 'kinetic', 'magnetic', 'thermal'], 'Choose word') +
+      selectField('A moving pom-pom has _____ energy.', 'energy_blank_2', ['', 'elastic', 'kinetic', 'magnetic', 'thermal'], 'Choose word'));
+  }
+
+  function renderRound2() {
+    var html = '<div class="mini-note">Bank shots count as Made if the pom-pom lands in the basket.</div><div class="cards">';
+    ['3ft', '6ft', '9ft'].forEach(function (distance) {
+      html += '<section class="card"><h3>' + distance.replace('ft', ' ft') + ' Basket</h3>' +
+        selectField('Stretch used', 'r2_' + distance + '_stretch', ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
+        selectField('Shot result', 'r2_' + distance + '_result', ['', 'Made', 'Missed short', 'Missed long', 'Missed side'], 'Choose result') +
+        selectField('Video recorded?', 'r2_' + distance + '_video', ['', 'Yes', 'No'], 'Choose yes/no') +
+      '</section>';
+    });
+    html += '</div>';
+    return screenWrap('Round 2: Distance Challenge',
+      'Use what you learned. Try 3 ft, 6 ft, and 9 ft. Choose the stretch that you think will work best.',
+      html);
+  }
+
+  function renderVideo() {
+    var subject = makeSubject();
+    return screenWrap('Video Evidence Email',
+      'Send at least one short video clip to Mr. Patel using Gmail. Do not upload video here.',
+      '<div class="email-box">' +
+        '<div class="copy-row"><strong>Email:</strong> <code>' + teacherEmail + '</code> <button class="secondary small" type="button" data-copy="' + teacherEmail + '">Copy</button></div>' +
+        '<div class="copy-row"><strong>Subject:</strong> <code>' + escapeHtml(subject) + '</code> <button class="secondary small" type="button" data-copy="' + escapeHtml(subject) + '">Copy</button></div>' +
+      '</div>' +
+      selectField('Did your group email a video clip?', 'video_email_confirmed', ['', 'Yes', 'No'], 'Choose yes/no') +
+      textField('Which school email sent it?', 'video_sender_email', 'student@school.org') +
+      selectField('What did the clip show?', 'video_clip_description', ['', 'Made basket', 'Missed short', 'Missed long', 'Missed side', 'Hit backboard', 'Other / not sure'], 'Choose one'));
+  }
+
+  function renderFbd() {
+    return screenWrap('Free-Body Diagrams',
+      'Choose the force label for each arrow.',
+      '<div class="cards">' +
+        '<section class="card"><h3>Pom-pom sitting still before launch</h3>' +
+          '<div class="diagram"><div><div class="arrow-label">UP arrow</div><div>&uarr;</div><div class="ball">pom</div><div>&darr;</div><div class="arrow-label">DOWN arrow</div><div class="table-line"></div></div></div>' +
+          selectField('Choose the force for the UP arrow', 'fbd_before_up', forceChoices, 'Choose force') +
+          selectField('Choose the force for the DOWN arrow', 'fbd_before_down', forceChoices, 'Choose force') +
+        '</section>' +
+        '<section class="card"><h3>Pom-pom flying through the air</h3>' +
+          '<div class="diagram"><div><div class="arrow-label">Motion direction, not a force: &rarr;</div><div>&larr; BACK force</div><div class="ball">pom</div><div>&darr; DOWN force</div></div></div>' +
+          selectField('Choose the force for the DOWN arrow', 'fbd_air_down', forceChoices, 'Choose force') +
+          selectField('Choose the force for the BACK arrow', 'fbd_air_back', forceChoices, 'Choose force') +
+        '</section>' +
+      '</div>');
+  }
+
+  function renderConservation() {
+    return screenWrap('Energy Conservation',
+      'Answer True or False.',
+      selectField('Energy disappears when the pom-pom stops moving.', 'conservation_q1', ['', 'True', 'False'], 'Choose') +
+      selectField('Some energy changes into sound, heat, and air movement.', 'conservation_q2', ['', 'True', 'False'], 'Choose') +
+      selectField('Pulling the rubber band farther usually stores more elastic potential energy.', 'conservation_q3', ['', 'True', 'False'], 'Choose'));
+  }
+
+  function renderFinal() {
+    return screenWrap('Final Conclusion',
+      'Choose the best main idea.',
+      selectField('What was the main idea of this lab?', 'final_main_idea', [
+        '',
+        'A. Stretching the rubber band more can store more elastic potential energy, which can give the pom-pom more motion.',
+        'B. Magnetic force made the pom-pom move toward the basket.',
+        'C. The pom-pom moved because energy disappeared.',
+        'D. The backboard created gravity.'
+      ], 'Choose one') +
+      selectField('For farther baskets, our group usually needed _____ stretch.', 'final_farther_baskets_stretch', ['', 'less', 'more', 'no'], 'Choose word'));
+  }
+
+  function renderReview() {
+    var score = estimateScore(state.responses);
+    var warning = getSubmissionBlocker() || getSubmissionWarning();
+    return screenWrap('Review and Submit',
+      'Check your group work. The score shown here is an estimate. Mr. Patel\'s Sheet calculates the final score.',
+      '<div class="score-box">' + score.total + ' / 20</div>' +
+      (warning ? '<p class="warning-text">' + warning + '</p>' : '') +
+      '<div class="review-list">' +
+        reviewItem('Period', state.responses.period || 'Missing') +
+        reviewItem('Group', state.responses.group_name || 'Missing') +
+        reviewItem('Members', state.responses.member_names || 'Missing') +
+        reviewItem('Round 1 trials filled', countFields(r1Fields()) + ' of 9') +
+        reviewItem('Round 2 rows filled', countFields(r2Fields()) + ' of 9') +
+        reviewItem('Video email', (state.responses.video_email_confirmed || 'Missing') + ' / ' + (state.responses.video_sender_email || 'No sender email')) +
+        reviewItem('Free-body answers', [state.responses.fbd_before_up, state.responses.fbd_before_down, state.responses.fbd_air_down, state.responses.fbd_air_back].filter(Boolean).join(', ') || 'Missing') +
+        reviewItem('Conservation answers', [state.responses.conservation_q1, state.responses.conservation_q2, state.responses.conservation_q3].filter(Boolean).join(', ') || 'Missing') +
+      '</div>');
+  }
+
+  function submitLab() {
+    var blocker = getSubmissionBlocker();
+    if (blocker) {
+      window.alert(blocker);
+      return;
+    }
+
+    var warning = getSubmissionWarning();
+    if (warning && !window.confirm(warning + '\n\nSubmit anyway? Missing answers can score 0.')) {
+      return;
+    }
+
+    nextBtn.disabled = true;
+    nextBtn.textContent = 'Submitting...';
+    var payload = Object.assign({}, state.responses, {
+      user_agent: navigator.userAgent,
+      emergency_mode_used: false
+    });
+
+    if (!window.google || !google.script || !google.script.run) {
+      showSubmitFailure('This page is not connected to Apps Script right now.');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response && response.ok) {
+          state.mode = 'submitted';
+          state.submitted = response;
+          if (!state.responses.server_submission_id) {
+            state.responses.server_submission_id = response.submissionId;
+          }
+          saveState();
+          showSubmittedProof(response);
+        } else {
+          showSubmitFailure(response && response.message ? response.message : 'The Sheet did not save this time.');
+        }
+      })
+      .withFailureHandler(function (error) {
+        showSubmitFailure(error && error.message ? error.message : 'The Sheet did not save this time.');
+      })
+      .submitLab(payload);
+  }
+
+  function showSubmitFailure(message) {
+    nextBtn.disabled = false;
+    nextBtn.textContent = 'Submit Lab';
+    state.lastSubmitError = message;
+    saveState();
+    host.innerHTML = screenWrap('Submit Problem',
+      '<span class="error-text">' + escapeHtml(message) + '</span>',
+      '<p>Your answers are still saved on this iPad.</p>' +
+      '<button class="primary" type="button" id="retrySubmit">Retry Submit</button> ' +
+      '<button class="secondary" type="button" id="openBackup">Backup Proof Only</button>');
+    document.getElementById('retrySubmit').addEventListener('click', submitLab);
+    document.getElementById('openBackup').addEventListener('click', showBackupProof);
+  }
+
+  function showSubmittedProof(response) {
+    state.mode = 'submitted';
+    saveState();
+    var template = document.getElementById('submittedTemplate').innerHTML;
+    host.innerHTML = template;
+    document.getElementById('submittedDetails').innerHTML =
+      proofItem('Status', 'WAS submitted to Mr. Patel\'s Sheet') +
+      proofItem('Submission ID', response.submissionId || state.responses.server_submission_id || 'Saved') +
+      proofItem('Time', formatDate(response.timestamp || new Date())) +
+      proofItem('Period', state.responses.period || '') +
+      proofItem('Group', state.responses.group_name || '') +
+      proofItem('Score', ((response.score && response.score.total) || estimateScore(state.responses).total) + ' / 20');
+    nextBtn.disabled = true;
+    backBtn.disabled = true;
+    nextBtn.textContent = 'Submitted';
+  }
+
+  function showBackupProof() {
+    state.mode = 'backup';
+    saveState();
+    var score = estimateScore(state.responses);
+    var template = document.getElementById('backupTemplate').innerHTML;
+    host.innerHTML = template;
+    document.getElementById('backupDetails').innerHTML =
+      proofItem('Status', 'NOT submitted to Mr. Patel\'s Sheet') +
+      proofItem('Local time', formatDate(new Date())) +
+      proofItem('Period', state.responses.period || 'Missing') +
+      proofItem('Group', state.responses.group_name || 'Missing') +
+      proofItem('Members', state.responses.member_names || 'Missing') +
+      proofItem('Local estimated score', score.total + ' / 20') +
+      proofItem('Video email', (state.responses.video_email_confirmed || 'Missing') + ' / ' + (state.responses.video_sender_email || 'No sender email')) +
+      proofItem('Round 1 trials', summarizeFields(r1Fields())) +
+      proofItem('Round 2', summarizeFields(r2Fields())) +
+      proofItem('Science answers', summarizeScience());
+    document.getElementById('backupJson').textContent = JSON.stringify({
+      local_time: new Date().toISOString(),
+      estimated_score: score.total,
+      responses: state.responses
+    }, null, 2);
+    nextBtn.disabled = false;
+    backBtn.disabled = false;
+    backBtn.textContent = 'Return to Lab';
+    nextBtn.textContent = 'Return to Lab';
+  }
+
+  function getScreenWarning(key) {
+    if (key === 'start') {
+      if (!state.responses.period || !state.responses.group_name) return 'Period and group name are required.';
+      if (countMemberNames(state.responses.member_names) < 2) return 'Enter at least 2 group member names. Groups should be 3-4. Ask your teacher if your group has only 2.';
+    }
+    if (key === 'safety') {
+      var allSafe = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'].every(function (field) {
+        return !!state.responses[field];
+      });
+      if (!allSafe) return 'All safety boxes should be checked before launching.';
+    }
+    if (key === 'round1' && countFields(r1Fields()) < 9) return 'Round 1 is not complete yet.';
+    if (key === 'round2' && countFields(r2Fields()) < 9) return 'Round 2 is not complete yet.';
+    if (key === 'video' && state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Enter the school email that sent the video.';
+    return '';
+  }
+
+  function getSubmissionWarning() {
+    var missing = [];
+    if (countFields(r1Fields()) < 9) missing.push('Round 1 trials');
+    if (countFields(r2Fields()) < 9) missing.push('Round 2 rows');
+    if (countFields(['fbd_before_up', 'fbd_before_down', 'fbd_air_down', 'fbd_air_back']) < 4) missing.push('force diagram labels');
+    if (missing.length) return 'Missing: ' + missing.join(', ') + '.';
+    return '';
+  }
+
+  function getSubmissionBlocker() {
+    if (!state.responses.period) return 'Choose your period before submitting.';
+    if (!state.responses.group_name) return 'Enter your group name before submitting.';
+    if (countMemberNames(state.responses.member_names) < 2) return 'Enter at least 2 group member names before submitting. Groups should be 3-4. Ask your teacher if your group has only 2.';
+    if (state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Video marked Yes needs the sender email.';
+    return '';
+  }
+
+  function returnToLabFromBackup() {
+    state.mode = 'work';
+    saveState();
+    render();
+  }
+
+  function estimateScore(r) {
+    var score = { total: 0 };
+    var safetyOk = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'].every(function (field) { return !!r[field]; });
+    score.total += safetyOk ? 2 : 0;
+    var r1Count = countFields(r1Fields());
+    score.total += r1Count >= 9 ? 3 : (r1Count >= 6 ? 2 : (r1Count >= 3 ? 1 : 0));
+    score.total += r.r1_pattern_choice === 'More stretch usually made the pom-pom go farther.' ? 1 : 0;
+    score.total += r.r1_most_elastic_potential_choice === 'Large stretch' ? 1 : 0;
+    score.total += r.energy_blank_1 === 'elastic' && r.energy_blank_2 === 'kinetic' ? 1 : 0;
+    score.total += countFields(r2Fields()) === 9 ? 2 : 0;
+    score.total += r.video_email_confirmed === 'Yes' && !!r.video_sender_email ? 1 : 0;
+    score.total += r.fbd_before_up === 'Normal force' ? 1 : 0;
+    score.total += r.fbd_before_down === 'Gravity' ? 1 : 0;
+    score.total += r.fbd_air_down === 'Gravity' ? 1 : 0;
+    score.total += r.fbd_air_back === 'Air resistance' ? 1 : 0;
+    score.total += r.conservation_q1 === 'False' ? 1 : 0;
+    score.total += r.conservation_q2 === 'True' ? 1 : 0;
+    score.total += r.conservation_q3 === 'True' ? 1 : 0;
+    score.total += (r.final_main_idea || '').charAt(0) === 'A' ? 1 : 0;
+    score.total += r.final_farther_baskets_stretch === 'more' ? 1 : 0;
+    return score;
+  }
+
+  function screenWrap(title, intro, body) {
+    return '<section class="screen"><h2>' + title + '</h2><p class="screen-intro">' + intro + '</p>' + body + '</section>';
+  }
+
+  function selectField(label, field, options, placeholder) {
+    return '<label class="field">' + label + '<select data-field="' + field + '">' +
+      options.map(function (option, index) {
+        var value = index === 0 && option === '' ? '' : option;
+        var text = index === 0 && option === '' ? placeholder : option;
+        return '<option value="' + escapeHtml(value) + '">' + escapeHtml(text) + '</option>';
+      }).join('') + '</select></label>';
+  }
+
+  function textField(label, field, placeholder) {
+    return '<label class="field">' + label + '<input type="text" data-field="' + field + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
+  }
+
+  function textAreaField(label, field, placeholder) {
+    return '<label class="field">' + label + '<textarea data-field="' + field + '" placeholder="' + escapeHtml(placeholder) + '"></textarea></label>';
+  }
+
+  function choiceList(field, choices) {
+    return '<div class="choice-list">' + choices.map(function (choice) {
+      return '<label class="choice-row"><input type="radio" name="' + field + '" data-field="' + field + '" value="' + escapeHtml(choice) + '"><span>' + escapeHtml(choice) + '</span></label>';
+    }).join('') + '</div>';
+  }
+
+  function tapChoices(field, choices) {
+    return '<div class="result-buttons">' + choices.map(function (choice) {
+      return '<button type="button" class="tap-choice" data-choice-field="' + field + '" data-choice-value="' + escapeHtml(choice) + '">' + escapeHtml(choice) + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function reviewItem(label, value) {
+    return '<div class="review-item"><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value) + '</span></div>';
+  }
+
+  function proofItem(label, value) {
+    return '<div><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value) + '</span></div>';
+  }
+
+  function r1Fields() {
+    return ['r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3', 'r1_large_t1', 'r1_large_t2', 'r1_large_t3'];
+  }
+
+  function r2Fields() {
+    return ['r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video', 'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video', 'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video'];
+  }
+
+  function countFields(fields) {
+    return fields.reduce(function (total, field) {
+      return total + (state.responses[field] ? 1 : 0);
+    }, 0);
+  }
+
+  function countMemberNames(memberNames) {
+    if (!memberNames) return 0;
+    return String(memberNames).split(/[\n,;]+/).map(function (name) {
+      return name.trim();
+    }).filter(function (name) {
+      return name !== '';
+    }).length;
+  }
+
+  function summarizeFields(fields) {
+    return fields.map(function (field) {
+      return field + ': ' + (state.responses[field] || 'blank');
+    }).join(' | ');
+  }
+
+  function summarizeScience() {
+    return [
+      'Pattern: ' + (state.responses.r1_pattern_choice || 'blank'),
+      'Energy: ' + (state.responses.energy_blank_1 || 'blank') + ', ' + (state.responses.energy_blank_2 || 'blank'),
+      'Forces: ' + [state.responses.fbd_before_up, state.responses.fbd_before_down, state.responses.fbd_air_down, state.responses.fbd_air_back].filter(Boolean).join(', '),
+      'Final: ' + (state.responses.final_main_idea || 'blank')
+    ].join(' | ');
+  }
+
+  function makeSubject() {
+    var period = state.responses.period || '[period]';
+    var group = state.responses.group_name || '[group name]';
+    return 'CPS Rubber Band Lab - Period ' + period.replace('st hour', '').replace('th hour', '') + ' - ' + group;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      window.prompt('Copy this:', text);
+    }
+  }
+
+  function makeAttemptId() {
+    return 'attempt-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+  }
+
+  function formatDate(value) {
+    try {
+      return new Date(value).toLocaleString();
+    } catch (err) {
+      return String(value);
+    }
+  }
+
+  function cap(text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+})();
+</script>

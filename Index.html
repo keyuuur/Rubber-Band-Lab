@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CPS Rubber Band Basket Launch</title>
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="top-bar">
+        <div>
+          <p class="eyebrow">Concepts of Physical Systems</p>
+          <h1>Rubber Band Basket Launch</h1>
+        </div>
+        <button id="backupBtn" class="secondary small" type="button">Backup Proof Only</button>
+      </header>
+
+      <section id="resumeWarning" class="notice hidden">
+        <strong>Saved work found.</strong>
+        <span>This iPad already has group work saved. Continue if this is your group, or reset before a new group starts.</span>
+      </section>
+
+      <section class="progress-wrap" aria-label="Lab progress">
+        <div class="progress-text">
+          <span id="stepLabel">Start</span>
+          <span id="stepCount">1 of 12</span>
+        </div>
+        <div class="progress-track"><div id="progressFill"></div></div>
+      </section>
+
+      <form id="labForm">
+        <section id="screenHost"></section>
+      </form>
+
+      <nav class="nav-bar">
+        <button id="backBtn" class="secondary" type="button">Back</button>
+        <button id="resetBtn" class="danger" type="button">Reset</button>
+        <button id="nextBtn" class="primary" type="button">Next</button>
+      </nav>
+    </main>
+
+    <template id="submittedTemplate">
+      <section class="proof submitted">
+        <h2>Submitted!</h2>
+        <p class="big-status">This WAS submitted to Mr. Patel's Sheet.</p>
+        <div id="submittedDetails" class="proof-grid"></div>
+        <p>Show this screen to your teacher.</p>
+      </section>
+    </template>
+
+    <template id="backupTemplate">
+      <section class="proof backup">
+        <h2>Backup Proof Only</h2>
+        <p class="big-status">This has NOT submitted to Mr. Patel's Sheet.</p>
+        <p>Show Mr. Patel now or take a screenshot. Do not reset this iPad until he says it is okay.</p>
+        <div id="backupDetails" class="proof-grid"></div>
+        <details>
+          <summary>Teacher backup code</summary>
+          <pre id="backupJson"></pre>
+        </details>
+      </section>
+    </template>
+
+    <?!= include('Script'); ?>
+  </body>
+</html>
