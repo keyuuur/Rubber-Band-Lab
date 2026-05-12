@@ -1,5 +1,8 @@
 {
   "timeZone": "America/Chicago",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets.currentonly"
+  ],
   "dependencies": {
   },
   "executionApi": {
