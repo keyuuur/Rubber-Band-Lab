@@ -18,7 +18,7 @@ Tracked project files:
 - `Index.html` - Student web app shell, color-strip sidebar, and proof templates.
 - `Styles.html` - iPad-friendly raw CSS for the color-strip kiosk layout.
 - `Script.html` - Student screen flow, kiosk shot-entry UI, localStorage autosave, score estimate, submit/retry/proof behavior.
-- `appsscript.json` - Apps Script manifest with V8 runtime, web app settings, API executable access, and spreadsheet OAuth scope.
+- `appsscript.json` - Apps Script manifest with V8 runtime, web app settings, and spreadsheet OAuth scope.
 - `AGENTS.md` - Project rules and first-pass agent workflow.
 - `FIRST_PASS_BUILD_NOTES.md` - Setup, schema, deployment notes, limitations, QA list.
 - `.claspignore` - Ensures only Apps Script app files push with clasp.
@@ -104,24 +104,19 @@ The prior three-shot version was live-tested through the Apps Script Execution A
 
 ## Deployment / API State
 
-Current sandbox Sheet:
-
-`https://drive.google.com/open?id=1aVp4e8hq4LbAd2h44zx8bD_NLw3rXEWBzL1rWW9gU-I`
-
-Current final sandbox web app deployment:
-
-`https://script.google.com/a/macros/psdr3.org/s/AKfycbxM7fvg71-3CNSXx99UzjVQiGJujr_Q4Hb73L8RzRYl3b3iCBhSPyJvhhP8w9AwOJcVNA/exec`
+The sandbox Sheet ID and web app URL are intentionally not stored in this public-facing handoff. Keep those in a private teacher note.
 
 The in-app browser could not complete the student web flow because the web app redirects to district Google sign-in. That is expected for domain-protected deployment. A real browser signed into a `psdr3.org` account is still needed for the final iPad/student smoke test.
 
-`clasp run getSettings` now works after:
+`clasp run getSettings` worked during smoke testing after:
 
 1. Creating a Desktop OAuth client in the Google Cloud project.
 2. Downloading the client secret locally.
 3. Running clasp login with project scopes.
 4. Enabling Apps Script API in Google Cloud.
-5. Adding `executionApi` manifest config.
+5. Temporarily adding `executionApi` manifest config for CLI smoke testing.
 6. Adding spreadsheet current-only OAuth scope.
+7. Removing `executionApi` again after smoke tests so normal class use goes through the web app.
 
 Current manifest additions:
 
@@ -129,9 +124,6 @@ Current manifest additions:
 "oauthScopes": [
   "https://www.googleapis.com/auth/spreadsheets.currentonly"
 ],
-"executionApi": {
-  "access": "DOMAIN"
-},
 "webapp": {
   "executeAs": "USER_DEPLOYING",
   "access": "DOMAIN"
@@ -162,7 +154,7 @@ Current manifest additions:
 8. Created sandbox Sheet-bound Apps Script project with clasp.
 9. Deployed web app.
 10. Created public GitHub repo `Rubber-Band-Lab`.
-11. Added API executable manifest config.
+11. Temporarily added API executable manifest config for CLI testing.
 12. Created Desktop OAuth client and reauthorized clasp.
 13. Enabled Apps Script API.
 14. Added spreadsheet scope.
@@ -184,6 +176,7 @@ Current manifest additions:
    - visible Round 2 per-distance video controls removed
    - existing raw Sheet columns preserved
 18. Redeployed the existing sandbox web app deployment to version `@7`.
+19. Applied a security hardening pass: authoritative server validation, formula-safe Sheet writes, safer duplicate retry handling, proof-screen protection, reduced submitted localStorage, redacted error logging, and removed API executable access from the manifest.
 
 ## Tests Already Run
 

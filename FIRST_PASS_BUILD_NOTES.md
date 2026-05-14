@@ -88,7 +88,7 @@ Columns:
 1. In Apps Script, click Deploy > New deployment.
 2. Choose Web app.
 3. Set Execute as: Me.
-4. Set access based on school needs, usually district/domain users or anyone with the link.
+4. Set access to district/domain users only unless the teacher intentionally chooses a broader setting.
 5. Deploy and copy the web app URL.
 6. Test one dummy student submission before class.
 7. Make a QR code or post the web app URL for students.

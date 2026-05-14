@@ -92,7 +92,14 @@
   });
 
   resetBtn.addEventListener('click', function () {
-    if (window.confirm('Are you sure you want to clear this group\'s work?')) {
+    if (state.mode === 'backup') {
+      window.alert('Do not reset yet. Show Backup Proof Only to Mr. Patel first.');
+      return;
+    }
+    var message = state.mode === 'submitted'
+      ? 'Clear the submitted proof from this iPad? Only do this after Mr. Patel has checked the submission ID.'
+      : 'Are you sure you want to clear this group\'s work?';
+    if (window.confirm(message)) {
       localStorage.removeItem(STORAGE_KEY);
       state = freshState(false);
       render();
@@ -101,6 +108,7 @@
   });
 
   backupBtn.addEventListener('click', function () {
+    if (state.mode === 'submitted') return;
     showBackupProof();
   });
 
@@ -113,6 +121,7 @@
         client_attempt_id: makeAttemptId()
       },
       submitted: null,
+      submittedProof: null,
       hadSavedWork: hadSavedWork
     };
   }
@@ -128,6 +137,7 @@
       parsed.screenIndex = Math.min(Math.max(Number(parsed.screenIndex) || 0, 0), screens.length - 1);
       parsed.mode = parsed.mode || 'work';
       parsed.ui = normalizeUiState(parsed.ui);
+      parsed.submittedProof = parsed.submittedProof || null;
       return parsed;
     } catch (err) {
       return freshState(false);
@@ -140,13 +150,14 @@
       mode: state.mode,
       ui: state.ui,
       responses: state.responses,
-      submitted: state.submitted
+      submitted: state.submitted,
+      submittedProof: state.submittedProof
     }));
   }
 
   function render() {
-    if (state.mode === 'submitted' && state.submitted) {
-      showSubmittedProof(state.submitted);
+    if (state.mode === 'submitted' && (state.submittedProof || state.submitted)) {
+      showSubmittedProof(state.submittedProof || buildSubmittedProof(state.submitted));
       return;
     }
     if (state.mode === 'backup') {
@@ -166,6 +177,8 @@
     backBtn.disabled = state.screenIndex === 0;
     nextBtn.disabled = false;
     nextBtn.textContent = screen.key === 'review' ? 'Submit Lab' : 'Next';
+    resetBtn.disabled = false;
+    backupBtn.classList.remove('hidden');
 
     bindInputs();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -571,7 +584,7 @@
         '<div class="copy-row"><strong>Subject:</strong> <code>' + escapeHtml(subject) + '</code> <button class="secondary small" type="button" data-copy="' + escapeHtml(subject) + '">Copy</button></div>' +
       '</div>' +
       selectField('Did your group email a video clip?', 'video_email_confirmed', ['', 'Yes', 'No'], 'Choose yes/no') +
-      textField('Which school email sent it?', 'video_sender_email', 'student@school.org') +
+      emailField('Which school email sent it?', 'video_sender_email', 'student@school.org') +
       selectField('What did the clip show?', 'video_clip_description', ['', 'Made basket', 'Missed short', 'Missed long', 'Missed side', 'Hit backboard', 'Other / not sure'], 'Choose one'));
   }
 
@@ -660,13 +673,7 @@
     google.script.run
       .withSuccessHandler(function (response) {
         if (response && response.ok) {
-          state.mode = 'submitted';
-          state.submitted = response;
-          if (!state.responses.server_submission_id) {
-            state.responses.server_submission_id = response.submissionId;
-          }
-          saveState();
-          showSubmittedProof(response);
+          enterSubmittedMode(response);
         } else {
           showSubmitFailure(response && response.message ? response.message : 'The Sheet did not save this time.');
         }
@@ -691,25 +698,62 @@
     document.getElementById('openBackup').addEventListener('click', showBackupProof);
   }
 
-  function showSubmittedProof(response) {
+  function enterSubmittedMode(response) {
+    var proof = buildSubmittedProof(response);
     state.mode = 'submitted';
+    state.submitted = null;
+    state.submittedProof = proof;
+    state.responses = {};
+    state.ui = defaultUiState();
+    saveState();
+    showSubmittedProof(proof);
+  }
+
+  function buildSubmittedProof(response) {
+    response = response || {};
+    var serverScore = response.score && response.score.total !== undefined && response.score.total !== null
+      ? response.score.total
+      : estimateScore(state.responses).total;
+    return {
+      submissionId: response.submissionId || state.responses.server_submission_id || 'Saved',
+      timestamp: response.timestamp || new Date().toISOString(),
+      period: state.responses.period || response.period || '',
+      groupName: state.responses.group_name || response.groupName || '',
+      scoreTotal: serverScore,
+      needsReview: !!response.needsReview,
+      reviewReasons: response.reviewReasons || ''
+    };
+  }
+
+  function showSubmittedProof(proof) {
+    proof = proof || state.submittedProof || buildSubmittedProof(state.submitted);
+    state.mode = 'submitted';
+    state.submittedProof = proof;
+    state.submitted = null;
+    state.responses = {};
     saveState();
     document.body.classList.add('proof-mode');
     var template = document.getElementById('submittedTemplate').innerHTML;
     host.innerHTML = template;
     document.getElementById('submittedDetails').innerHTML =
       proofItem('Status', 'WAS submitted to Mr. Patel\'s Sheet') +
-      proofItem('Submission ID', response.submissionId || state.responses.server_submission_id || 'Saved') +
-      proofItem('Time', formatDate(response.timestamp || new Date())) +
-      proofItem('Period', state.responses.period || '') +
-      proofItem('Group', state.responses.group_name || '') +
-      proofItem('Score', ((response.score && response.score.total) || estimateScore(state.responses).total) + ' / 20');
+      proofItem('Submission ID', proof.submissionId || 'Saved') +
+      proofItem('Time', formatDate(proof.timestamp || new Date())) +
+      proofItem('Period', proof.period || '') +
+      proofItem('Group', proof.groupName || '') +
+      proofItem('Score', proof.scoreTotal + ' / 20');
     nextBtn.disabled = true;
     backBtn.disabled = true;
+    resetBtn.disabled = false;
+    backupBtn.classList.add('hidden');
     nextBtn.textContent = 'Submitted';
   }
 
   function showBackupProof() {
+    if (state.mode === 'submitted') {
+      showSubmittedProof(state.submittedProof || buildSubmittedProof(state.submitted));
+      return;
+    }
     state.mode = 'backup';
     saveState();
     document.body.classList.add('proof-mode');
@@ -735,6 +779,8 @@
     }, null, 2);
     nextBtn.disabled = false;
     backBtn.disabled = false;
+    resetBtn.disabled = true;
+    backupBtn.classList.remove('hidden');
     backBtn.textContent = 'Return to Lab';
     nextBtn.textContent = 'Return to Lab';
   }
@@ -753,6 +799,7 @@
     if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for each stretch.';
     if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots for each distance and choose the stretch used.';
     if (key === 'video' && state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Enter the school email that sent the video.';
+    if (key === 'video' && state.responses.video_sender_email && !isEmailLike(state.responses.video_sender_email)) return 'Enter the school email that sent the video, like name@psdr3.org.';
     return '';
   }
 
@@ -770,6 +817,7 @@
     if (!state.responses.group_name) return 'Enter your group name before submitting.';
     if (countMemberNames(state.responses.member_names) < 2) return 'Enter at least 2 group member names before submitting. Groups should be 3-4. Ask your teacher if your group has only 2.';
     if (state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Video marked Yes needs the sender email.';
+    if (state.responses.video_sender_email && !isEmailLike(state.responses.video_sender_email)) return 'Enter the school email that sent the video, like name@psdr3.org.';
     return '';
   }
 
@@ -817,6 +865,10 @@
 
   function textField(label, field, placeholder) {
     return '<label class="field">' + label + '<input type="text" data-field="' + field + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
+  }
+
+  function emailField(label, field, placeholder) {
+    return '<label class="field">' + label + '<input type="email" data-field="' + field + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
   }
 
   function textAreaField(label, field, placeholder) {
@@ -951,6 +1003,10 @@
 
   function distanceLabel(distance) {
     return distance.replace('ft', ' ft');
+  }
+
+  function isEmailLike(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
   }
 
   function escapeHtml(value) {

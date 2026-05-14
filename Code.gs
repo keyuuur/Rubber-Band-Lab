@@ -41,6 +41,11 @@ var BEST_COLUMNS = [
 ];
 
 var LOG_COLUMNS = ['Timestamp', 'Type', 'Message', 'Details'];
+var RESULT_CHOICES = ['Made', 'Missed short', 'Missed long', 'Missed side'];
+var YES_NO_CHOICES = ['Yes', 'No'];
+var STRETCH_CHOICES = ['Small', 'Medium', 'Large'];
+var FORCE_CHOICES = ['Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
+var MAX_RAW_JSON_LENGTH = 30000;
 
 function getRound1FieldNames_() {
   var fields = [];
@@ -93,8 +98,7 @@ function columnFromFieldName_(fieldName) {
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
-    .setTitle('CPS Rubber Band Basket Launch')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle('CPS Rubber Band Basket Launch');
 }
 
 function include(filename) {
@@ -126,27 +130,15 @@ function submitLab(payload) {
       return validation;
     }
 
+    var groupKey = normalizeGroupKey_(cleanPayload.period, cleanPayload.group_name);
     var duplicate = findDuplicateAttempt_(sheets.raw, cleanPayload.client_attempt_id);
     if (duplicate) {
-      return {
-        ok: true,
-        duplicate: true,
-        message: 'This attempt was already submitted. Returning the saved submission.',
-        submissionId: duplicate.Submission_ID,
-        timestamp: duplicate.Timestamp,
-        score: {
-          total: Number(duplicate.Score_Total) || 0,
-          percent: Number(duplicate.Percent) || 0
-        },
-        needsReview: duplicate.Needs_Review === true || duplicate.Needs_Review === 'TRUE',
-        reviewReasons: duplicate.Review_Reasons || ''
-      };
+      return handleDuplicateAttempt_(sheets, duplicate, cleanPayload, groupKey);
     }
 
     var score = scoreSubmission(cleanPayload);
     var timestamp = new Date();
     var submissionId = generateSubmissionId_();
-    var groupKey = normalizeGroupKey_(cleanPayload.period, cleanPayload.group_name);
     var review = buildReviewFlags_(cleanPayload, score);
     var rawRecord = buildRawRecord_(timestamp, submissionId, groupKey, cleanPayload, score, review);
 
@@ -167,10 +159,9 @@ function submitLab(payload) {
   } catch (err) {
     try {
       var safeSheets = ensureSheets_();
-      logTrouble_(safeSheets.log, 'SERVER_ERROR', err && err.message ? err.message : String(err), {
-        stack: err && err.stack ? err.stack : '',
-        payload: payload
-      });
+      var safeDetails = safePayloadSummary_(payload);
+      safeDetails.error_type = err && err.name ? err.name : 'Error';
+      logTrouble_(safeSheets.log, 'SERVER_ERROR', err && err.message ? err.message : String(err), safeDetails);
     } catch (logErr) {
       // If logging fails, still return a clear student-safe message.
     }
@@ -261,7 +252,8 @@ function appendRawSubmission_(sheet, record) {
   }));
 }
 
-function upsertBestScore_(sheet, rawRecord) {
+function upsertBestScore_(sheet, rawRecord, options) {
+  options = options || {};
   var headers = getHeaders_(sheet);
   var groupKeyIndex = headers.indexOf('Group_Key');
   var values = sheet.getDataRange().getValues();
@@ -306,7 +298,7 @@ function upsertBestScore_(sheet, rawRecord) {
 
   record.Last_Submission_ID = rawRecord.Submission_ID;
   record.Last_Timestamp = rawRecord.Timestamp;
-  record.Submission_Count = currentCount + 1;
+  record.Submission_Count = existingRow > -1 && options.skipCountIncrement ? currentCount : currentCount + 1;
   record.Notes = record.Notes || '';
 
   var rowValues = headers.map(function(header) {
@@ -329,6 +321,23 @@ function generateSubmissionId_() {
 }
 
 function validateSubmission_(payload) {
+  var schema = getPayloadSchema_();
+  var unknownFields = [];
+  Object.keys(payload || {}).forEach(function(key) {
+    if (!schema[key]) unknownFields.push(key);
+  });
+  if (unknownFields.length) {
+    return {
+      ok: false,
+      errorCode: 'UNKNOWN_FIELDS',
+      message: 'The submission has unexpected data. Refresh the page and try again, or ask your teacher.',
+      fields: unknownFields.slice(0, 10)
+    };
+  }
+
+  var fieldError = validatePayloadValues_(payload, schema);
+  if (fieldError) return fieldError;
+
   var missing = [];
   if (!hasText_(payload.period)) missing.push('period');
   if (!hasText_(payload.group_name)) missing.push('group_name');
@@ -368,7 +377,133 @@ function validateSubmission_(payload) {
     };
   }
 
+  if (hasText_(payload.video_sender_email) && !isEmailLike_(payload.video_sender_email)) {
+    return {
+      ok: false,
+      errorCode: 'INVALID_VIDEO_EMAIL',
+      message: 'Enter the school email that sent the video, like name@psdr3.org.'
+    };
+  }
+
+  var rawJson = JSON.stringify(payload || {});
+  if (rawJson.length > MAX_RAW_JSON_LENGTH) {
+    return {
+      ok: false,
+      errorCode: 'SUBMISSION_TOO_LARGE',
+      message: 'This submission has too much text. Shorten long answers and try again.'
+    };
+  }
+
   return { ok: true };
+}
+
+function getPayloadSchema_() {
+  var schema = {
+    client_attempt_id: { type: 'text', max: 120 },
+    period: { type: 'text', max: 20 },
+    group_name: { type: 'text', max: 80 },
+    member_names: { type: 'text', max: 500 },
+    user_agent: { type: 'text', max: 500 },
+    emergency_mode_used: { type: 'boolean' },
+    server_submission_id: { type: 'text', max: 120 },
+    prediction_choice: { type: 'choice', choices: [
+      'The pom-pom will usually go farther.',
+      'The pom-pom will usually go shorter.',
+      'The pullback will not matter much.'
+    ] },
+    prediction_explanation: { type: 'text', max: 1000 },
+    safety_pompom_only: { type: 'boolean' },
+    safety_not_at_people: { type: 'boolean' },
+    setup_basket_backboard: { type: 'boolean' },
+    setup_launch_line: { type: 'boolean' },
+    setup_round1_6ft: { type: 'boolean' },
+    setup_video_required: { type: 'boolean' },
+    r1_pattern_choice: { type: 'choice', choices: [
+      'More stretch usually made the pom-pom go farther.',
+      'More stretch usually made the pom-pom go shorter.',
+      'Stretch did not seem to matter.'
+    ] },
+    r1_most_elastic_potential_choice: { type: 'choice', choices: ['Small stretch', 'Medium stretch', 'Large stretch'] },
+    r1_best_for_6ft_choice: { type: 'choice', choices: ['Small stretch', 'Medium stretch', 'Large stretch', 'No clear best stretch'] },
+    energy_blank_1: { type: 'choice', choices: ['elastic', 'kinetic', 'magnetic', 'thermal'] },
+    energy_blank_2: { type: 'choice', choices: ['elastic', 'kinetic', 'magnetic', 'thermal'] },
+    video_email_confirmed: { type: 'choice', choices: YES_NO_CHOICES },
+    video_sender_email: { type: 'text', max: 120 },
+    video_clip_description: { type: 'choice', choices: ['Made basket', 'Missed short', 'Missed long', 'Missed side', 'Hit backboard', 'Other / not sure'] },
+    fbd_before_up: { type: 'choice', choices: FORCE_CHOICES },
+    fbd_before_down: { type: 'choice', choices: FORCE_CHOICES },
+    fbd_air_down: { type: 'choice', choices: FORCE_CHOICES },
+    fbd_air_back: { type: 'choice', choices: FORCE_CHOICES },
+    conservation_q1: { type: 'choice', choices: ['True', 'False'] },
+    conservation_q2: { type: 'choice', choices: ['True', 'False'] },
+    conservation_q3: { type: 'choice', choices: ['True', 'False'] },
+    final_main_idea: { type: 'choice', choices: [
+      'A. Stretching the rubber band more can store more elastic potential energy, which can give the pom-pom more motion.',
+      'B. Magnetic force made the pom-pom move toward the basket.',
+      'C. The pom-pom moved because energy disappeared.',
+      'D. The backboard created gravity.'
+    ] },
+    final_farther_baskets_stretch: { type: 'choice', choices: ['less', 'more', 'no'] }
+  };
+
+  getRound1FieldNames_().forEach(function(field) {
+    schema[field] = { type: 'choice', choices: RESULT_CHOICES };
+  });
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    schema['r2_' + distance + '_stretch'] = { type: 'choice', choices: STRETCH_CHOICES };
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      schema['r2_' + distance + '_t' + i] = { type: 'choice', choices: RESULT_CHOICES };
+    }
+    schema['r2_' + distance + '_video'] = { type: 'choice', choices: YES_NO_CHOICES };
+  });
+  return schema;
+}
+
+function validatePayloadValues_(payload, schema) {
+  var invalid = [];
+  Object.keys(schema).forEach(function(field) {
+    var rule = schema[field];
+    var value = payload[field];
+    if (!hasText_(value) && rule.type !== 'boolean') return;
+
+    if (rule.type === 'text') {
+      if (hasText_(value) && String(value).length > rule.max) {
+        invalid.push(field + ' is too long');
+      }
+      return;
+    }
+
+    if (rule.type === 'choice') {
+      if (hasText_(value) && !choiceAllowed_(value, rule.choices)) {
+        invalid.push(field + ' has an invalid choice');
+      }
+      return;
+    }
+
+    if (rule.type === 'boolean' && !booleanAllowed_(value)) {
+      invalid.push(field + ' has an invalid yes/no value');
+    }
+  });
+
+  if (!invalid.length) return null;
+  return {
+    ok: false,
+    errorCode: 'INVALID_FIELD_VALUE',
+    message: 'One answer has an unexpected value. Refresh the page and try again, or ask your teacher.',
+    details: invalid.slice(0, 10)
+  };
+}
+
+function choiceAllowed_(value, choices) {
+  return choices.some(function(choice) {
+    return equalsChoice_(value, choice);
+  });
+}
+
+function booleanAllowed_(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (value === true || value === false) return true;
+  return ['true', 'false', 'yes', 'no'].indexOf(String(value).toLowerCase()) > -1;
 }
 
 function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, review) {
@@ -434,7 +569,7 @@ function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, revi
     record[column] = payload[fieldMap[column]];
   });
 
-  return record;
+  return sanitizeRecordForSheet_(record);
 }
 
 function buildReviewFlags_(payload, score) {
@@ -446,6 +581,74 @@ function buildReviewFlags_(payload, score) {
   if (countFilled_(payload, r1Fields) < r1Fields.length) reasons.push('Round 1 trials incomplete');
   if (countFilled_(payload, r2Fields) < r2Fields.length) reasons.push('Round 2 entries incomplete');
   return { needsReview: reasons.length > 0, reasons: reasons };
+}
+
+function handleDuplicateAttempt_(sheets, duplicate, payload, groupKey) {
+  if (!duplicateAttemptMatches_(duplicate, payload, groupKey)) {
+    logTrouble_(sheets.log, 'DUPLICATE_CONFLICT', 'A duplicate attempt ID had different group or answer data.', {
+      attempt_id: payload.client_attempt_id,
+      group_key: groupKey
+    });
+    return {
+      ok: false,
+      errorCode: 'DUPLICATE_ATTEMPT_CONFLICT',
+      message: 'This iPad has a saved attempt ID that does not match this group work. Ask your teacher before submitting again.'
+    };
+  }
+
+  upsertBestScore_(sheets.best, duplicate, { skipCountIncrement: true });
+  rebuildDashboard_(sheets.dashboard, sheets.best);
+  return {
+    ok: true,
+    duplicate: true,
+    message: 'This attempt was already submitted. Returning the saved submission.',
+    submissionId: duplicate.Submission_ID,
+    timestamp: responseTimestamp_(duplicate.Timestamp),
+    score: {
+      total: Number(duplicate.Score_Total) || 0,
+      percent: Number(duplicate.Percent) || 0
+    },
+    needsReview: duplicate.Needs_Review === true || duplicate.Needs_Review === 'TRUE',
+    reviewReasons: duplicate.Review_Reasons || ''
+  };
+}
+
+function responseTimestamp_(value) {
+  if (value instanceof Date) return value.toISOString();
+  return hasText_(value) ? String(value) : new Date().toISOString();
+}
+
+function duplicateAttemptMatches_(duplicate, payload, groupKey) {
+  if (!duplicate || duplicate.Group_Key !== groupKey) return false;
+  var storedPayload = parseRawJson_(duplicate.Raw_JSON);
+  if (!storedPayload) return false;
+  return payloadFingerprint_(storedPayload) === payloadFingerprint_(payload);
+}
+
+function parseRawJson_(rawJson) {
+  if (!hasText_(rawJson)) return null;
+  try {
+    return JSON.parse(String(rawJson));
+  } catch (err) {
+    return null;
+  }
+}
+
+function payloadFingerprint_(payload) {
+  var schema = getPayloadSchema_();
+  var ignored = {
+    user_agent: true,
+    emergency_mode_used: true,
+    server_submission_id: true
+  };
+  var cleaned = sanitizePayload_(payload || {});
+  var parts = [];
+  Object.keys(schema).sort().forEach(function(field) {
+    if (ignored[field]) return;
+    var value = cleaned[field];
+    parts.push(field + '=' + String(value === undefined || value === null ? '' : value));
+  });
+  return parts.join('|');
 }
 
 function rebuildDashboard_(dashboardSheet, bestSheet) {
@@ -539,6 +742,30 @@ function logTrouble_(sheet, type, message, details) {
   sheet.appendRow([new Date(), type, message, JSON.stringify(details || {})]);
 }
 
+function sanitizeRecordForSheet_(record) {
+  var cleaned = {};
+  Object.keys(record || {}).forEach(function(key) {
+    cleaned[key] = safeSheetValue_(record[key]);
+  });
+  return cleaned;
+}
+
+function safeSheetValue_(value) {
+  if (typeof value !== 'string') return value;
+  if (/^[=+\-@\t\r]/.test(value)) return "'" + value;
+  return value;
+}
+
+function safePayloadSummary_(payload) {
+  payload = payload || {};
+  return {
+    attempt_id: payload.client_attempt_id || '',
+    period: payload.period || '',
+    group_key: payload.period && payload.group_name ? normalizeGroupKey_(payload.period, payload.group_name) : '',
+    app_version: APP_VERSION
+  };
+}
+
 function sanitizePayload_(payload) {
   var cleaned = {};
   Object.keys(payload || {}).forEach(function(key) {
@@ -578,6 +805,10 @@ function hasText_(value) {
 
 function isYesish_(value) {
   return value === true || String(value).toLowerCase() === 'true' || String(value).toLowerCase() === 'yes';
+}
+
+function isEmailLike_(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
 function equalsChoice_(actual, expected) {

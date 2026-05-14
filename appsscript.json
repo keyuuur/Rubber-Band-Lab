@@ -5,9 +5,6 @@
   ],
   "dependencies": {
   },
-  "executionApi": {
-    "access": "DOMAIN"
-  },
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "DOMAIN"
