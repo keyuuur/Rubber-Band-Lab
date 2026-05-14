@@ -6,7 +6,7 @@ Project: CPS Rubber Band Basket Launch Lab
 Local folder: `C:\Users\Keyur\Desktop\Claude Code YEET\Concepts of Phys Games\Rubber Band Lab LOCAL`  
 GitHub repo: `https://github.com/keyuuur/Rubber-Band-Lab`  
 Current branch: `main`  
-Latest pushed commit: `4d60a81 Add spreadsheet scope for API smoke tests`
+Current local revision: ten-shot trial update plus color-strip kiosk UI for Round 1 and Round 2
 
 This is a Google Apps Script classroom web app for a 9th grade Concepts of Physical Systems rubber band/pom-pom launch lab. Students work in groups on iPads, record simple launch data, answer energy and force questions, confirm video evidence was emailed, and submit one group response to Google Sheets.
 
@@ -15,15 +15,16 @@ This is a Google Apps Script classroom web app for a 9th grade Concepts of Physi
 Tracked project files:
 
 - `Code.gs` - Apps Script backend, Sheet setup, validation, scoring, duplicate handling, best scores, dashboard rebuild, troubleshooting log.
-- `Index.html` - Student web app shell and proof templates.
-- `Styles.html` - iPad-friendly raw CSS.
-- `Script.html` - Student screen flow, localStorage autosave, score estimate, submit/retry/proof behavior.
+- `Index.html` - Student web app shell, color-strip sidebar, and proof templates.
+- `Styles.html` - iPad-friendly raw CSS for the color-strip kiosk layout.
+- `Script.html` - Student screen flow, kiosk shot-entry UI, localStorage autosave, score estimate, submit/retry/proof behavior.
 - `appsscript.json` - Apps Script manifest with V8 runtime, web app settings, API executable access, and spreadsheet OAuth scope.
 - `AGENTS.md` - Project rules and first-pass agent workflow.
 - `FIRST_PASS_BUILD_NOTES.md` - Setup, schema, deployment notes, limitations, QA list.
 - `.claspignore` - Ensures only Apps Script app files push with clasp.
 - `.gitignore` - Keeps local deployment config and credentials out of Git.
 - `llm-handoff-file-rubber-band.md` - This file.
+- `GPT55_UI_HANDOFF.md` - UI-specific handoff for the color-strip kiosk pass.
 
 Ignored local-only files:
 
@@ -54,12 +55,15 @@ Important classroom behavior:
 - Start screen tells students: `Work in groups of 3-4. One submission per group. Ask your teacher if your group has only 2.`
 - Normal submission requires at least 2 member names on both client and server.
 - Round 1 is fixed at 6 ft.
+- Round 1 now records 10 quick-tap shots for each stretch level using a one-block-at-a-time kiosk UI: Small, Medium, and Large.
 - Round 2 distances are 3 ft, 6 ft, and 9 ft.
+- Round 2 now records 10 quick-tap shots for each distance using the same kiosk UI, plus the main stretch used for each distance.
+- Round 2 no longer shows per-distance video questions. The old `R2_*_Video` raw columns remain for schema compatibility, but scoring/review completeness now uses stretch plus shot fields only.
 - Trial result choices include `Made`, `Missed short`, `Missed long`, and `Missed side`.
 - Round 1 and Round 2 both state: `Bank shots count as Made if the pom-pom lands in the basket.`
 - Video evidence is email-only to `patelk07@psdr3.org`; there is no upload feature.
 - Backup proof wording is `Backup Proof Only`, not `Emergency Submit`.
-- Backup Proof Only clearly says the work has `NOT submitted` to Mr. Patel's Sheet.
+- Backup Proof Only clearly says the work has `NOT been submitted` to Mr. Patel's Sheet.
 - Backup Proof Only Back/Return behavior returns students to the lab.
 - Free-body diagrams use dropdowns, not drag-and-drop.
 - The submitted proof screen says the work WAS submitted and shows a Submission ID.
@@ -96,7 +100,7 @@ Total: 20 points.
 - Energy conservation: 3
 - Final conclusion: 2
 
-Perfect submission has been live-tested through the Apps Script Execution API and returned `20/20`.
+The prior three-shot version was live-tested through the Apps Script Execution API and returned `20/20`. After the ten-shot revision, rerun the smoke test before class because the raw Sheet schema changed.
 
 ## Deployment / API State
 
@@ -162,10 +166,24 @@ Current manifest additions:
 12. Created Desktop OAuth client and reauthorized clasp.
 13. Enabled Apps Script API.
 14. Added spreadsheet scope.
-15. Live-tested backend through Execution API:
+15. Live-tested backend through Execution API for the first-pass three-shot version:
    - `getSettings` succeeded
    - perfect dummy submission succeeded with score 20/20
    - one-member submission correctly rejected
+16. Reviewed GPT's ten-shot zip proposal and implemented the same high-level requirement in the trusted codebase:
+   - Round 1 = 10 shots per stretch
+   - Round 2 = 10 shots per distance
+   - dynamic backend field generation
+   - 20-point scoring preserved
+   - iPad quick-tap UI preserved
+17. Implemented the Option 4B Color Strip / Station Kiosk UI:
+   - dark navy left sidebar
+   - one active ten-shot block at a time
+   - large Made / Missed short / Missed long / Missed side buttons
+   - tappable trial progress tiles
+   - visible Round 2 per-distance video controls removed
+   - existing raw Sheet columns preserved
+18. Redeployed the existing sandbox web app deployment to version `@7`.
 
 ## Tests Already Run
 
@@ -174,6 +192,8 @@ Local deterministic tests:
 - JavaScript parse for `Code.gs` and `Script.html`
 - manifest JSON parse
 - perfect scoring returns 20/20
+- Round 2 raw fields remain 36 while completion fields are 33
+- Round 2 visible per-distance video prompt is absent from `Script.html`
 - video Yes with blank sender email rejects
 - group key normalization works
 - no-name and one-name members reject
@@ -184,15 +204,18 @@ Local deterministic tests:
 
 Live backend tests:
 
-- `clasp -P . run getSettings` returned settings successfully.
-- Direct Execution API `getSettings` returned `ok: true`.
-- Direct Execution API `submitLab` perfect dummy returned:
+- `clasp -P . run getSettings` returned settings successfully after the kiosk UI deployment.
+- Direct Execution API `getSettings` returned `ok: true`, `round1TrialsPerStretch: 10`, and `round2TrialsPerDistance: 10`.
+- Direct Execution API `submitLab` perfect kiosk dummy returned:
   - `ok: true`
   - `score.total: 20`
-  - `submissionId: RBBL-20260512-183626-5129`
-- Direct Execution API one-member dummy returned:
+  - `submissionId: RBBL-20260513-200649-3815`
+- Direct Execution API one-member kiosk dummy returned:
   - `ok: false`
   - `errorCode: NOT_ENOUGH_MEMBERS`
+- Direct Execution API video-Yes-with-blank-sender dummy returned:
+  - `ok: false`
+  - `errorCode: VIDEO_EMAIL_REQUIRED`
 
 Not yet fully tested:
 

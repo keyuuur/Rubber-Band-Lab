@@ -1,7 +1,11 @@
-var APP_VERSION = '2026-05-12-first-pass';
-var SCORE_VERSION = 'rbbl-score-v1';
+var APP_VERSION = '2026-05-12-ten-shot-trials';
+var SCORE_VERSION = 'rbbl-score-v2';
 var TEACHER_EMAIL = 'patelk07@psdr3.org';
 var ALLOWED_PERIODS = ['1st hour', '7th hour'];
+var ROUND1_TRIALS_PER_STRETCH = 10;
+var ROUND2_TRIALS_PER_DISTANCE = 10;
+var ROUND1_STRETCH_KEYS = ['small', 'medium', 'large'];
+var ROUND2_DISTANCE_KEYS = ['3ft', '6ft', '9ft'];
 
 var SHEET_NAMES = {
   raw: 'Submissions_Raw',
@@ -17,15 +21,18 @@ var RAW_COLUMNS = [
   'Score_FBD', 'Score_Conservation', 'Score_Final', 'Percent',
   'Emergency_Mode_Used', 'Needs_Review', 'Review_Reasons', 'App_Version', 'Score_Version', 'User_Agent',
   'Prediction_Choice', 'Prediction_Explanation',
-  'Safety_Pompom_Only', 'Safety_Not_At_People', 'Setup_Basket_Backboard', 'Setup_Launch_Line', 'Setup_Round1_6ft', 'Setup_Video_Required',
-  'R1_Small_T1', 'R1_Small_T2', 'R1_Small_T3', 'R1_Medium_T1', 'R1_Medium_T2', 'R1_Medium_T3', 'R1_Large_T1', 'R1_Large_T2', 'R1_Large_T3',
-  'R1_Pattern_Choice', 'R1_Most_Elastic_Potential_Choice', 'R1_Best_For_6ft_Choice', 'Energy_Blank_1', 'Energy_Blank_2',
-  'R2_3ft_Stretch', 'R2_3ft_Result', 'R2_3ft_Video', 'R2_6ft_Stretch', 'R2_6ft_Result', 'R2_6ft_Video', 'R2_9ft_Stretch', 'R2_9ft_Result', 'R2_9ft_Video',
-  'Video_Email_Confirmed', 'Video_Sender_Email', 'Video_Clip_Description',
-  'FBD_Before_Up', 'FBD_Before_Down', 'FBD_Air_Down', 'FBD_Air_Back',
-  'Conservation_Q1', 'Conservation_Q2', 'Conservation_Q3', 'Final_Main_Idea', 'Final_Farther_Baskets_Stretch',
-  'Raw_JSON'
-];
+  'Safety_Pompom_Only', 'Safety_Not_At_People', 'Setup_Basket_Backboard', 'Setup_Launch_Line', 'Setup_Round1_6ft', 'Setup_Video_Required'
+].concat(
+  buildRound1RawColumns_(),
+  ['R1_Pattern_Choice', 'R1_Most_Elastic_Potential_Choice', 'R1_Best_For_6ft_Choice', 'Energy_Blank_1', 'Energy_Blank_2'],
+  buildRound2RawColumns_(),
+  [
+    'Video_Email_Confirmed', 'Video_Sender_Email', 'Video_Clip_Description',
+    'FBD_Before_Up', 'FBD_Before_Down', 'FBD_Air_Down', 'FBD_Air_Back',
+    'Conservation_Q1', 'Conservation_Q2', 'Conservation_Q3', 'Final_Main_Idea', 'Final_Farther_Baskets_Stretch',
+    'Raw_JSON'
+  ]
+);
 
 var BEST_COLUMNS = [
   'Group_Key', 'Period', 'Group_Name', 'Member_Names', 'Best_Score_Total', 'Percent', 'Best_Submission_ID',
@@ -34,6 +41,54 @@ var BEST_COLUMNS = [
 ];
 
 var LOG_COLUMNS = ['Timestamp', 'Type', 'Message', 'Details'];
+
+function getRound1FieldNames_() {
+  var fields = [];
+  ROUND1_STRETCH_KEYS.forEach(function(stretch) {
+    for (var i = 1; i <= ROUND1_TRIALS_PER_STRETCH; i++) {
+      fields.push('r1_' + stretch + '_t' + i);
+    }
+  });
+  return fields;
+}
+
+function getRound2FieldNames_() {
+  var fields = [];
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    fields.push('r2_' + distance + '_stretch');
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      fields.push('r2_' + distance + '_t' + i);
+    }
+    fields.push('r2_' + distance + '_video');
+  });
+  return fields;
+}
+
+function getRound2CompletionFieldNames_() {
+  var fields = [];
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    fields.push('r2_' + distance + '_stretch');
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      fields.push('r2_' + distance + '_t' + i);
+    }
+  });
+  return fields;
+}
+
+function buildRound1RawColumns_() {
+  return getRound1FieldNames_().map(columnFromFieldName_);
+}
+
+function buildRound2RawColumns_() {
+  return getRound2FieldNames_().map(columnFromFieldName_);
+}
+
+function columnFromFieldName_(fieldName) {
+  return fieldName.split('_').map(function(part) {
+    if (/^t\d+$/.test(part)) return part.toUpperCase();
+    return part.charAt(0).toUpperCase() + part.slice(1);
+  }).join('_');
+}
 
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
@@ -53,7 +108,9 @@ function getSettings() {
     appVersion: APP_VERSION,
     scoreVersion: SCORE_VERSION,
     teacherEmail: TEACHER_EMAIL,
-    allowedPeriods: ALLOWED_PERIODS
+    allowedPeriods: ALLOWED_PERIODS,
+    round1TrialsPerStretch: ROUND1_TRIALS_PER_STRETCH,
+    round2TrialsPerDistance: ROUND2_TRIALS_PER_DISTANCE
   };
 }
 
@@ -149,23 +206,17 @@ function scoreSubmission(payload) {
   ];
   score.safety = safetyFields.every(function(field) { return isYesish_(payload[field]); }) ? 2 : 0;
 
-  var r1Fields = [
-    'r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3',
-    'r1_large_t1', 'r1_large_t2', 'r1_large_t3'
-  ];
+  var r1Fields = getRound1FieldNames_();
   var r1Count = countFilled_(payload, r1Fields);
-  score.round1Data = r1Count >= 9 ? 3 : (r1Count >= 6 ? 2 : (r1Count >= 3 ? 1 : 0));
+  score.round1Data = r1Count >= r1Fields.length ? 3 : (r1Count >= ROUND1_TRIALS_PER_STRETCH * 2 ? 2 : (r1Count >= ROUND1_TRIALS_PER_STRETCH ? 1 : 0));
 
   if (equalsChoice_(payload.r1_pattern_choice, 'More stretch usually made the pom-pom go farther.')) score.round1Science += 1;
   if (equalsChoice_(payload.r1_most_elastic_potential_choice, 'Large stretch')) score.round1Science += 1;
   if (equalsChoice_(payload.energy_blank_1, 'elastic') && equalsChoice_(payload.energy_blank_2, 'kinetic')) score.round1Science += 1;
 
-  var r2Fields = [
-    'r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video',
-    'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video',
-    'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video'
-  ];
-  score.round2Video = countFilled_(payload, r2Fields) === r2Fields.length ? 2 : 0;
+  var r2Fields = getRound2CompletionFieldNames_();
+  var r2Count = countFilled_(payload, r2Fields);
+  score.round2Video = r2Count >= r2Fields.length ? 2 : (r2Count >= (ROUND2_TRIALS_PER_DISTANCE + 1) * 2 ? 1 : 0);
   if (equalsChoice_(payload.video_email_confirmed, 'Yes') && hasText_(payload.video_sender_email)) score.round2Video += 1;
 
   if (equalsChoice_(payload.fbd_before_up, 'Normal force')) score.fbd += 1;
@@ -356,29 +407,11 @@ function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, revi
     Setup_Launch_Line: 'setup_launch_line',
     Setup_Round1_6ft: 'setup_round1_6ft',
     Setup_Video_Required: 'setup_video_required',
-    R1_Small_T1: 'r1_small_t1',
-    R1_Small_T2: 'r1_small_t2',
-    R1_Small_T3: 'r1_small_t3',
-    R1_Medium_T1: 'r1_medium_t1',
-    R1_Medium_T2: 'r1_medium_t2',
-    R1_Medium_T3: 'r1_medium_t3',
-    R1_Large_T1: 'r1_large_t1',
-    R1_Large_T2: 'r1_large_t2',
-    R1_Large_T3: 'r1_large_t3',
     R1_Pattern_Choice: 'r1_pattern_choice',
     R1_Most_Elastic_Potential_Choice: 'r1_most_elastic_potential_choice',
     R1_Best_For_6ft_Choice: 'r1_best_for_6ft_choice',
     Energy_Blank_1: 'energy_blank_1',
     Energy_Blank_2: 'energy_blank_2',
-    R2_3ft_Stretch: 'r2_3ft_stretch',
-    R2_3ft_Result: 'r2_3ft_result',
-    R2_3ft_Video: 'r2_3ft_video',
-    R2_6ft_Stretch: 'r2_6ft_stretch',
-    R2_6ft_Result: 'r2_6ft_result',
-    R2_6ft_Video: 'r2_6ft_video',
-    R2_9ft_Stretch: 'r2_9ft_stretch',
-    R2_9ft_Result: 'r2_9ft_result',
-    R2_9ft_Video: 'r2_9ft_video',
     Video_Email_Confirmed: 'video_email_confirmed',
     Video_Sender_Email: 'video_sender_email',
     Video_Clip_Description: 'video_clip_description',
@@ -393,6 +426,10 @@ function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, revi
     Final_Farther_Baskets_Stretch: 'final_farther_baskets_stretch'
   };
 
+  getRound1FieldNames_().concat(getRound2FieldNames_()).forEach(function(fieldName) {
+    fieldMap[columnFromFieldName_(fieldName)] = fieldName;
+  });
+
   Object.keys(fieldMap).forEach(function(column) {
     record[column] = payload[fieldMap[column]];
   });
@@ -402,10 +439,12 @@ function buildRawRecord_(timestamp, submissionId, groupKey, payload, score, revi
 
 function buildReviewFlags_(payload, score) {
   var reasons = [];
+  var r1Fields = getRound1FieldNames_();
+  var r2Fields = getRound2CompletionFieldNames_();
   if (!equalsChoice_(payload.video_email_confirmed, 'Yes')) reasons.push('Video email not confirmed');
   if (score.total < 12) reasons.push('Low score');
-  if (countFilled_(payload, ['r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3', 'r1_large_t1', 'r1_large_t2', 'r1_large_t3']) < 9) reasons.push('Round 1 trials incomplete');
-  if (countFilled_(payload, ['r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video', 'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video', 'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video']) < 9) reasons.push('Round 2 rows incomplete');
+  if (countFilled_(payload, r1Fields) < r1Fields.length) reasons.push('Round 1 trials incomplete');
+  if (countFilled_(payload, r2Fields) < r2Fields.length) reasons.push('Round 2 entries incomplete');
   return { needsReview: reasons.length > 0, reasons: reasons };
 }
 
@@ -483,10 +522,12 @@ function ensureSheetWithHeaders_(ss, name, headers) {
 
 function writeSettings_(sheet) {
   sheet.clear();
-  sheet.getRange(1, 1, 6, 2).setValues([
+  sheet.getRange(1, 1, 8, 2).setValues([
     ['Setting', 'Value'],
     ['Allowed_Periods', ALLOWED_PERIODS.join(', ')],
     ['Teacher_Email', TEACHER_EMAIL],
+    ['Round1_Trials_Per_Stretch', ROUND1_TRIALS_PER_STRETCH],
+    ['Round2_Trials_Per_Distance', ROUND2_TRIALS_PER_DISTANCE],
     ['App_Version', APP_VERSION],
     ['Score_Version', SCORE_VERSION],
     ['Last_Checked', new Date()]

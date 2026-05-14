@@ -5,8 +5,18 @@
   var STORAGE_KEY = 'cps_rubber_band_lab_first_pass';
   var teacherEmail = 'patelk07@psdr3.org';
   var resultChoices = ['Made', 'Missed short', 'Missed long', 'Missed side'];
+  var resultMeta = {
+    'Made': { label: 'MADE', icon: '&#10003;', key: 'made' },
+    'Missed short': { label: 'MISSED SHORT', icon: '&uarr;', key: 'short' },
+    'Missed long': { label: 'MISSED LONG', icon: '&rarr;', key: 'long' },
+    'Missed side': { label: 'MISSED SIDE', icon: '&harr;', key: 'side' }
+  };
   var stretchChoices = ['Small', 'Medium', 'Large'];
   var forceChoices = ['', 'Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
+  var ROUND1_TRIALS_PER_STRETCH = 10;
+  var ROUND2_TRIALS_PER_DISTANCE = 10;
+  var ROUND1_STRETCH_KEYS = ['small', 'medium', 'large'];
+  var ROUND2_DISTANCE_KEYS = ['3ft', '6ft', '9ft'];
   var screens = [
     { key: 'start', label: 'Start', render: renderStart },
     { key: 'safety', label: 'Safety', render: renderSafety },
@@ -21,9 +31,22 @@
     { key: 'final', label: 'Final Conclusion', render: renderFinal },
     { key: 'review', label: 'Review/Submit', render: renderReview }
   ];
+  var sidebarSteps = [
+    { label: 'Group Info', keys: ['start'] },
+    { label: 'Safety', keys: ['safety'] },
+    { label: 'Prediction', keys: ['prediction'] },
+    { label: 'Round 1', keys: ['round1'] },
+    { label: 'Analysis 1', keys: ['pattern', 'energy'] },
+    { label: 'Round 2', keys: ['round2'] },
+    { label: 'Video Email', keys: ['video'] },
+    { label: 'FBD', keys: ['fbd'] },
+    { label: 'Final Qs', keys: ['conservation', 'final'] },
+    { label: 'Review & Submit', keys: ['review'] }
+  ];
 
   var state = loadState();
   var host = document.getElementById('screenHost');
+  var sideNav = document.getElementById('sideNav');
   var backBtn = document.getElementById('backBtn');
   var nextBtn = document.getElementById('nextBtn');
   var resetBtn = document.getElementById('resetBtn');
@@ -85,6 +108,7 @@
     return {
       screenIndex: 0,
       mode: 'work',
+      ui: defaultUiState(),
       responses: {
         client_attempt_id: makeAttemptId()
       },
@@ -103,6 +127,7 @@
       parsed.responses.client_attempt_id = parsed.responses.client_attempt_id || makeAttemptId();
       parsed.screenIndex = Math.min(Math.max(Number(parsed.screenIndex) || 0, 0), screens.length - 1);
       parsed.mode = parsed.mode || 'work';
+      parsed.ui = normalizeUiState(parsed.ui);
       return parsed;
     } catch (err) {
       return freshState(false);
@@ -113,6 +138,7 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       screenIndex: state.screenIndex,
       mode: state.mode,
+      ui: state.ui,
       responses: state.responses,
       submitted: state.submitted
     }));
@@ -129,6 +155,8 @@
     }
 
     var screen = screens[state.screenIndex];
+    document.body.classList.remove('proof-mode');
+    renderSidebar(screen.key);
     document.getElementById('stepLabel').textContent = screen.label;
     document.getElementById('stepCount').textContent = (state.screenIndex + 1) + ' of ' + screens.length;
     document.getElementById('progressFill').style.width = Math.round(((state.screenIndex + 1) / screens.length) * 100) + '%';
@@ -141,6 +169,42 @@
 
     bindInputs();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function defaultUiState() {
+    return {
+      round1Stretch: 'small',
+      round1Trial: 1,
+      round2Distance: '3ft',
+      round2Trial: 1
+    };
+  }
+
+  function normalizeUiState(ui) {
+    var defaults = defaultUiState();
+    ui = ui || {};
+    return {
+      round1Stretch: ROUND1_STRETCH_KEYS.indexOf(ui.round1Stretch) > -1 ? ui.round1Stretch : defaults.round1Stretch,
+      round1Trial: clampTrial(ui.round1Trial, ROUND1_TRIALS_PER_STRETCH),
+      round2Distance: ROUND2_DISTANCE_KEYS.indexOf(ui.round2Distance) > -1 ? ui.round2Distance : defaults.round2Distance,
+      round2Trial: clampTrial(ui.round2Trial, ROUND2_TRIALS_PER_DISTANCE)
+    };
+  }
+
+  function clampTrial(value, max) {
+    var trial = Number(value) || 1;
+    return Math.min(Math.max(trial, 1), max);
+  }
+
+  function renderSidebar(activeKey) {
+    if (!sideNav) return;
+    sideNav.innerHTML = sidebarSteps.map(function (step, index) {
+      var active = step.keys.indexOf(activeKey) > -1;
+      return '<div class="sidebar-step' + (active ? ' active' : '') + '">' +
+        '<span class="sidebar-number">' + (index + 1) + '</span>' +
+        '<span>' + escapeHtml(step.label) + '</span>' +
+      '</div>';
+    }).join('');
   }
 
   function bindInputs() {
@@ -168,6 +232,42 @@
       });
     });
 
+    host.querySelectorAll('[data-kiosk-result]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        recordKioskResult(button.getAttribute('data-kiosk-round'), button.getAttribute('data-kiosk-result'));
+      });
+    });
+
+    host.querySelectorAll('[data-kiosk-trial]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        setKioskTrial(button.getAttribute('data-kiosk-round'), button.getAttribute('data-kiosk-trial'));
+      });
+    });
+
+    host.querySelectorAll('[data-kiosk-block]').forEach(function (select) {
+      select.addEventListener('change', function () {
+        setKioskBlock(select.getAttribute('data-kiosk-round'), select.value);
+      });
+    });
+
+    host.querySelectorAll('[data-kiosk-next]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        nextKioskTrial(button.getAttribute('data-kiosk-round'));
+      });
+    });
+
+    host.querySelectorAll('[data-local-back]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        backBtn.click();
+      });
+    });
+
+    host.querySelectorAll('[data-info-alert]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        window.alert(button.getAttribute('data-info-alert'));
+      });
+    });
+
     host.querySelectorAll('[data-copy]').forEach(function (button) {
       button.addEventListener('click', function () {
         copyText(button.getAttribute('data-copy'));
@@ -181,6 +281,85 @@
     if (!field) return;
     state.responses[field] = input.type === 'checkbox' ? input.checked : input.value;
     saveState();
+  }
+
+  function recordKioskResult(roundKey, value) {
+    var field = getActiveKioskField(roundKey);
+    if (!field) return;
+    state.responses[field] = value;
+    advanceToNextBlank(roundKey);
+    saveState();
+    render();
+  }
+
+  function setKioskTrial(roundKey, trial) {
+    if (roundKey === 'round1') {
+      state.ui.round1Trial = clampTrial(trial, ROUND1_TRIALS_PER_STRETCH);
+    } else if (roundKey === 'round2') {
+      state.ui.round2Trial = clampTrial(trial, ROUND2_TRIALS_PER_DISTANCE);
+    }
+    saveState();
+    render();
+  }
+
+  function setKioskBlock(roundKey, value) {
+    if (roundKey === 'round1' && ROUND1_STRETCH_KEYS.indexOf(value) > -1) {
+      state.ui.round1Stretch = value;
+      state.ui.round1Trial = firstBlankTrial(round1BlockFields(value), ROUND1_TRIALS_PER_STRETCH);
+    } else if (roundKey === 'round2' && ROUND2_DISTANCE_KEYS.indexOf(value) > -1) {
+      state.ui.round2Distance = value;
+      state.ui.round2Trial = firstBlankTrial(round2BlockFields(value), ROUND2_TRIALS_PER_DISTANCE);
+    }
+    saveState();
+    render();
+  }
+
+  function nextKioskTrial(roundKey) {
+    if (roundKey === 'round1') {
+      state.ui.round1Trial = state.ui.round1Trial >= ROUND1_TRIALS_PER_STRETCH ? 1 : state.ui.round1Trial + 1;
+    } else if (roundKey === 'round2') {
+      state.ui.round2Trial = state.ui.round2Trial >= ROUND2_TRIALS_PER_DISTANCE ? 1 : state.ui.round2Trial + 1;
+    }
+    saveState();
+    render();
+  }
+
+  function advanceToNextBlank(roundKey) {
+    var fields = roundKey === 'round1' ? round1BlockFields(state.ui.round1Stretch) : round2BlockFields(state.ui.round2Distance);
+    var current = roundKey === 'round1' ? state.ui.round1Trial : state.ui.round2Trial;
+    for (var offset = 1; offset <= fields.length; offset++) {
+      var trial = ((current + offset - 1) % fields.length) + 1;
+      if (!state.responses[fields[trial - 1]]) {
+        setActiveTrialNoRender(roundKey, trial);
+        return;
+      }
+    }
+    setActiveTrialNoRender(roundKey, current);
+  }
+
+  function firstBlankTrial(fields, max) {
+    for (var i = 0; i < fields.length; i++) {
+      if (!state.responses[fields[i]]) return i + 1;
+    }
+    return 1;
+  }
+
+  function setActiveTrialNoRender(roundKey, trial) {
+    if (roundKey === 'round1') {
+      state.ui.round1Trial = clampTrial(trial, ROUND1_TRIALS_PER_STRETCH);
+    } else if (roundKey === 'round2') {
+      state.ui.round2Trial = clampTrial(trial, ROUND2_TRIALS_PER_DISTANCE);
+    }
+  }
+
+  function getActiveKioskField(roundKey) {
+    if (roundKey === 'round1') {
+      return 'r1_' + state.ui.round1Stretch + '_t' + state.ui.round1Trial;
+    }
+    if (roundKey === 'round2') {
+      return 'r2_' + state.ui.round2Distance + '_t' + state.ui.round2Trial;
+    }
+    return '';
   }
 
   function renderStart() {
@@ -201,7 +380,7 @@
       ['setup_basket_backboard', 'Our basket and backboard are set up.'],
       ['setup_launch_line', 'Our launch line is marked.'],
       ['setup_round1_6ft', 'During Round 1, the basket will stay at 6 ft.'],
-      ['setup_video_required', 'We will record at least one short video clip and email it to the teacher.']
+      ['setup_video_required', 'We will record video evidence and email at least one short clip to the teacher.']
     ];
     return screenWrap('Safety and Setup Check',
       'Check each box before starting. These rules keep the lab safe and fair.',
@@ -221,25 +400,23 @@
   }
 
   function renderRound1() {
-    var html = '<div class="meaning-grid">' +
-      '<div><strong>Made:</strong> lands in the basket.</div>' +
-      '<div><strong>Short:</strong> did not reach the basket.</div>' +
-      '<div><strong>Long:</strong> went past the basket.</div>' +
-      '<div><strong>Side:</strong> missed left or right.</div>' +
-      '<div><strong>Bank shots:</strong> Bank shots count as Made if the pom-pom lands in the basket.</div>' +
-      '</div>';
-    html += '<div class="cards">';
-    ['small', 'medium', 'large'].forEach(function (stretch) {
-      html += '<section class="card"><h3>' + cap(stretch) + ' Stretch</h3>';
-      for (var i = 1; i <= 3; i++) {
-        html += '<p><strong>Trial ' + i + '</strong></p>' + tapChoices('r1_' + stretch + '_t' + i, resultChoices);
-      }
-      html += '</section>';
+    var stretch = state.ui.round1Stretch;
+    return renderTenShotKiosk({
+      roundKey: 'round1',
+      title: 'ROUND 1 - ' + cap(stretch) + ' STRETCH',
+      subtitle: 'Basket distance: 6 ft (fixed)',
+      stepBadge: 'STEP 4 OF 10',
+      blockValue: stretch,
+      blockLabel: 'Change Stretch',
+      blockOptions: ROUND1_STRETCH_KEYS.map(function (key) {
+        return { value: key, label: cap(key) + ' stretch' };
+      }),
+      activeTrial: state.ui.round1Trial,
+      totalTrials: ROUND1_TRIALS_PER_STRETCH,
+      fields: round1BlockFields(stretch),
+      blockSummary: 'Ten shots for each stretch. Bank shots count as Made if the pom-pom lands in the basket.',
+      bottomNote: 'Round 1 total: ' + countFields(r1Fields()) + ' / ' + r1Fields().length + ' shots recorded'
     });
-    html += '</div>';
-    return screenWrap('Round 1: Calibration Test at 6 ft',
-      'Keep the basket at 6 ft. Use the same pom-pom, rubber band, launch line, and basket. Change only the amount of stretch.',
-      html);
   }
 
   function renderPattern() {
@@ -259,18 +436,130 @@
   }
 
   function renderRound2() {
-    var html = '<div class="mini-note">Bank shots count as Made if the pom-pom lands in the basket.</div><div class="cards">';
-    ['3ft', '6ft', '9ft'].forEach(function (distance) {
-      html += '<section class="card"><h3>' + distance.replace('ft', ' ft') + ' Basket</h3>' +
-        selectField('Stretch used', 'r2_' + distance + '_stretch', ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
-        selectField('Shot result', 'r2_' + distance + '_result', ['', 'Made', 'Missed short', 'Missed long', 'Missed side'], 'Choose result') +
-        selectField('Video recorded?', 'r2_' + distance + '_video', ['', 'Yes', 'No'], 'Choose yes/no') +
-      '</section>';
+    var distance = state.ui.round2Distance;
+    return renderTenShotKiosk({
+      roundKey: 'round2',
+      title: 'ROUND 2 - ' + distanceLabel(distance).toUpperCase() + ' BASKET',
+      subtitle: 'Distance challenge',
+      stepBadge: 'STEP 6 OF 10',
+      blockValue: distance,
+      blockLabel: 'Change Distance',
+      blockOptions: ROUND2_DISTANCE_KEYS.map(function (key) {
+        return { value: key, label: distanceLabel(key) };
+      }),
+      activeTrial: state.ui.round2Trial,
+      totalTrials: ROUND2_TRIALS_PER_DISTANCE,
+      fields: round2BlockFields(distance),
+      blockSummary: 'Ten shots for each distance. Bank shots count as Made if the pom-pom lands in the basket.',
+      topControls: '<div class="kiosk-stretch-row">' +
+        selectField('Stretch used for this distance', 'r2_' + distance + '_stretch', ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
+      '</div>',
+      bottomNote: 'Round 2 total: ' + countFields(r2ShotFields()) + ' / ' + r2ShotFields().length + ' shots and ' + countFields(r2StretchFields()) + ' / ' + r2StretchFields().length + ' stretch choices recorded'
     });
-    html += '</div>';
-    return screenWrap('Round 2: Distance Challenge',
-      'Use what you learned. Try 3 ft, 6 ft, and 9 ft. Choose the stretch that you think will work best.',
-      html);
+  }
+
+  function renderTenShotKiosk(config) {
+    var activeIndex = clampTrial(config.activeTrial, config.totalTrials) - 1;
+    var activeField = config.fields[activeIndex];
+    var activeValue = state.responses[activeField] || '';
+    var completed = countFields(config.fields);
+    var infoText = 'Made means the pom-pom lands in the basket. Short means it did not reach. Long means it went past. Side means it missed left or right. Bank shots count as Made.';
+
+    return '<section class="kiosk-screen">' +
+      '<div class="kiosk-header">' +
+        '<div class="kiosk-title-block">' +
+          '<h2 class="kiosk-title">' + escapeHtml(config.title) + '</h2>' +
+          '<p class="kiosk-subtitle">' + escapeHtml(config.subtitle) + '</p>' +
+        '</div>' +
+        '<div class="kiosk-step-badge">' + escapeHtml(config.stepBadge) + '</div>' +
+        '<div class="kiosk-trial-status">' +
+          '<span>Trial ' + (activeIndex + 1) + ' of ' + config.totalTrials + '</span>' +
+          '<div class="progress-dots">' + renderProgressDots(config.fields, activeIndex) + '</div>' +
+          '<button class="info-button" type="button" data-info-alert="' + escapeHtml(infoText) + '">Info</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="trial-progress-card">' +
+        '<div class="trial-progress-title">TRIAL PROGRESS</div>' +
+        '<div class="trial-number-row">' + renderTrialNumbers(config.roundKey, config.fields, activeIndex) + '</div>' +
+      '</div>' +
+      '<div class="kiosk-context">' + escapeHtml(config.blockSummary) + '</div>' +
+      (config.topControls || '') +
+      '<p class="result-prompt">Tap a result for Trial ' + (activeIndex + 1) + '</p>' +
+      '<div class="result-button-grid">' + renderResultButtons(config.roundKey, activeValue) + '</div>' +
+      '<div class="ten-shot-section">' +
+        '<div class="ten-shot-title"><span></span><strong>TEN-SHOT ENTRY</strong><span></span></div>' +
+        '<div class="ten-shot-tiles">' + renderShotTiles(config.roundKey, config.fields, activeIndex) + '</div>' +
+        '<div class="result-legend">' + renderResultLegend() + '</div>' +
+      '</div>' +
+      '<div class="kiosk-controls">' +
+        '<button class="secondary kiosk-back" type="button" data-local-back="true">Back</button>' +
+        '<label class="kiosk-select-label">' + escapeHtml(config.blockLabel) +
+          '<select class="kiosk-select" data-kiosk-round="' + config.roundKey + '" data-kiosk-block="true">' +
+            config.blockOptions.map(function (option) {
+              return '<option value="' + escapeHtml(option.value) + '"' + (option.value === config.blockValue ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>';
+            }).join('') +
+          '</select>' +
+        '</label>' +
+        '<button class="primary kiosk-next" type="button" data-kiosk-round="' + config.roundKey + '" data-kiosk-next="true">Next Trial</button>' +
+      '</div>' +
+      '<div class="email-reminder-strip">Video evidence is email-only to ' + teacherEmail + '</div>' +
+      '<div class="kiosk-bottom-note">' + escapeHtml(config.bottomNote) + '</div>' +
+    '</section>';
+  }
+
+  function renderProgressDots(fields, activeIndex) {
+    return fields.map(function (field, index) {
+      var classes = ['progress-dot'];
+      if (state.responses[field]) classes.push('filled');
+      if (index === activeIndex) classes.push('active');
+      return '<span class="' + classes.join(' ') + '"></span>';
+    }).join('');
+  }
+
+  function renderTrialNumbers(roundKey, fields, activeIndex) {
+    return fields.map(function (field, index) {
+      var classes = ['trial-number'];
+      if (state.responses[field]) classes.push('complete');
+      if (index === activeIndex) classes.push('active');
+      if (!state.responses[field]) classes.push('empty');
+      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + roundKey + '" data-kiosk-trial="' + (index + 1) + '">' + (index + 1) + '</button>';
+    }).join('');
+  }
+
+  function renderResultButtons(roundKey, activeValue) {
+    return resultChoices.map(function (choice) {
+      var meta = resultMeta[choice];
+      var classes = ['result-button', meta.key];
+      if (choice === activeValue) classes.push('selected');
+      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + roundKey + '" data-kiosk-result="' + escapeHtml(choice) + '">' +
+        '<span class="result-icon">' + meta.icon + '</span>' +
+        '<span>' + meta.label + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderShotTiles(roundKey, fields, activeIndex) {
+    return fields.map(function (field, index) {
+      var value = state.responses[field] || '';
+      var meta = resultMeta[value];
+      var classes = ['ten-shot-tile'];
+      if (value) classes.push('complete');
+      if (index === activeIndex) classes.push('active');
+      if (!value) classes.push('empty');
+      if (meta) classes.push(meta.key);
+      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + roundKey + '" data-kiosk-trial="' + (index + 1) + '">' +
+        '<span>Trial</span>' +
+        '<strong>' + (index + 1) + '</strong>' +
+        '<em>' + (meta ? meta.icon : (index === activeIndex ? '?' : '-')) + '</em>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderResultLegend() {
+    return resultChoices.map(function (choice) {
+      var meta = resultMeta[choice];
+      return '<span class="legend-item ' + meta.key + '"><em>' + meta.icon + '</em> ' + escapeHtml(choice) + '</span>';
+    }).join('') + '<span class="legend-item empty"><em>-</em> Not recorded</span>';
   }
 
   function renderVideo() {
@@ -335,8 +624,9 @@
         reviewItem('Period', state.responses.period || 'Missing') +
         reviewItem('Group', state.responses.group_name || 'Missing') +
         reviewItem('Members', state.responses.member_names || 'Missing') +
-        reviewItem('Round 1 trials filled', countFields(r1Fields()) + ' of 9') +
-        reviewItem('Round 2 rows filled', countFields(r2Fields()) + ' of 9') +
+        reviewItem('Round 1 shots', countFields(r1Fields()) + ' / ' + r1Fields().length + ' shots') +
+        reviewItem('Round 2 shots', countFields(r2ShotFields()) + ' / ' + r2ShotFields().length + ' shots') +
+        reviewItem('Round 2 stretch choices', countFields(r2StretchFields()) + ' / ' + r2StretchFields().length + ' choices') +
         reviewItem('Video email', (state.responses.video_email_confirmed || 'Missing') + ' / ' + (state.responses.video_sender_email || 'No sender email')) +
         reviewItem('Free-body answers', [state.responses.fbd_before_up, state.responses.fbd_before_down, state.responses.fbd_air_down, state.responses.fbd_air_back].filter(Boolean).join(', ') || 'Missing') +
         reviewItem('Conservation answers', [state.responses.conservation_q1, state.responses.conservation_q2, state.responses.conservation_q3].filter(Boolean).join(', ') || 'Missing') +
@@ -404,6 +694,7 @@
   function showSubmittedProof(response) {
     state.mode = 'submitted';
     saveState();
+    document.body.classList.add('proof-mode');
     var template = document.getElementById('submittedTemplate').innerHTML;
     host.innerHTML = template;
     document.getElementById('submittedDetails').innerHTML =
@@ -421,6 +712,7 @@
   function showBackupProof() {
     state.mode = 'backup';
     saveState();
+    document.body.classList.add('proof-mode');
     var score = estimateScore(state.responses);
     var template = document.getElementById('backupTemplate').innerHTML;
     host.innerHTML = template;
@@ -432,8 +724,9 @@
       proofItem('Members', state.responses.member_names || 'Missing') +
       proofItem('Local estimated score', score.total + ' / 20') +
       proofItem('Video email', (state.responses.video_email_confirmed || 'Missing') + ' / ' + (state.responses.video_sender_email || 'No sender email')) +
-      proofItem('Round 1 trials', summarizeFields(r1Fields())) +
-      proofItem('Round 2', summarizeFields(r2Fields())) +
+      proofItem('Round 1 trials', countFields(r1Fields()) + ' of ' + r1Fields().length + ' filled') +
+      proofItem('Round 2 shots', countFields(r2ShotFields()) + ' of ' + r2ShotFields().length + ' filled') +
+      proofItem('Round 2 stretch choices', countFields(r2StretchFields()) + ' of ' + r2StretchFields().length + ' filled') +
       proofItem('Science answers', summarizeScience());
     document.getElementById('backupJson').textContent = JSON.stringify({
       local_time: new Date().toISOString(),
@@ -457,16 +750,16 @@
       });
       if (!allSafe) return 'All safety boxes should be checked before launching.';
     }
-    if (key === 'round1' && countFields(r1Fields()) < 9) return 'Round 1 is not complete yet.';
-    if (key === 'round2' && countFields(r2Fields()) < 9) return 'Round 2 is not complete yet.';
+    if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for each stretch.';
+    if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots for each distance and choose the stretch used.';
     if (key === 'video' && state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Enter the school email that sent the video.';
     return '';
   }
 
   function getSubmissionWarning() {
     var missing = [];
-    if (countFields(r1Fields()) < 9) missing.push('Round 1 trials');
-    if (countFields(r2Fields()) < 9) missing.push('Round 2 rows');
+    if (countFields(r1Fields()) < r1Fields().length) missing.push('Round 1 trials');
+    if (countFields(r2CompletionFields()) < r2CompletionFields().length) missing.push('Round 2 shots');
     if (countFields(['fbd_before_up', 'fbd_before_down', 'fbd_air_down', 'fbd_air_back']) < 4) missing.push('force diagram labels');
     if (missing.length) return 'Missing: ' + missing.join(', ') + '.';
     return '';
@@ -491,11 +784,11 @@
     var safetyOk = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'].every(function (field) { return !!r[field]; });
     score.total += safetyOk ? 2 : 0;
     var r1Count = countFields(r1Fields());
-    score.total += r1Count >= 9 ? 3 : (r1Count >= 6 ? 2 : (r1Count >= 3 ? 1 : 0));
+    score.total += r1Count >= r1Fields().length ? 3 : (r1Count >= ROUND1_TRIALS_PER_STRETCH * 2 ? 2 : (r1Count >= ROUND1_TRIALS_PER_STRETCH ? 1 : 0));
     score.total += r.r1_pattern_choice === 'More stretch usually made the pom-pom go farther.' ? 1 : 0;
     score.total += r.r1_most_elastic_potential_choice === 'Large stretch' ? 1 : 0;
     score.total += r.energy_blank_1 === 'elastic' && r.energy_blank_2 === 'kinetic' ? 1 : 0;
-    score.total += countFields(r2Fields()) === 9 ? 2 : 0;
+    score.total += countFields(r2CompletionFields()) >= r2CompletionFields().length ? 2 : (countFields(r2CompletionFields()) >= (ROUND2_TRIALS_PER_DISTANCE + 1) * 2 ? 1 : 0);
     score.total += r.video_email_confirmed === 'Yes' && !!r.video_sender_email ? 1 : 0;
     score.total += r.fbd_before_up === 'Normal force' ? 1 : 0;
     score.total += r.fbd_before_down === 'Gravity' ? 1 : 0;
@@ -536,6 +829,10 @@
     }).join('') + '</div>';
   }
 
+  function trialRow(label, field) {
+    return '<div class="trial-row"><div class="trial-label">' + escapeHtml(label) + '</div>' + tapChoices(field, resultChoices) + '</div>';
+  }
+
   function tapChoices(field, choices) {
     return '<div class="result-buttons">' + choices.map(function (choice) {
       return '<button type="button" class="tap-choice" data-choice-field="' + field + '" data-choice-value="' + escapeHtml(choice) + '">' + escapeHtml(choice) + '</button>';
@@ -550,12 +847,46 @@
     return '<div><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value) + '</span></div>';
   }
 
-  function r1Fields() {
-    return ['r1_small_t1', 'r1_small_t2', 'r1_small_t3', 'r1_medium_t1', 'r1_medium_t2', 'r1_medium_t3', 'r1_large_t1', 'r1_large_t2', 'r1_large_t3'];
+  function round1BlockFields(stretch) {
+    var fields = [];
+    for (var i = 1; i <= ROUND1_TRIALS_PER_STRETCH; i++) {
+      fields.push('r1_' + stretch + '_t' + i);
+    }
+    return fields;
   }
 
-  function r2Fields() {
-    return ['r2_3ft_stretch', 'r2_3ft_result', 'r2_3ft_video', 'r2_6ft_stretch', 'r2_6ft_result', 'r2_6ft_video', 'r2_9ft_stretch', 'r2_9ft_result', 'r2_9ft_video'];
+  function round2BlockFields(distance) {
+    var fields = [];
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      fields.push('r2_' + distance + '_t' + i);
+    }
+    return fields;
+  }
+
+  function r1Fields() {
+    var fields = [];
+    ROUND1_STRETCH_KEYS.forEach(function (stretch) {
+      fields = fields.concat(round1BlockFields(stretch));
+    });
+    return fields;
+  }
+
+  function r2CompletionFields() {
+    return r2StretchFields().concat(r2ShotFields());
+  }
+
+  function r2StretchFields() {
+    return ROUND2_DISTANCE_KEYS.map(function (distance) {
+      return 'r2_' + distance + '_stretch';
+    });
+  }
+
+  function r2ShotFields() {
+    var fields = [];
+    ROUND2_DISTANCE_KEYS.forEach(function (distance) {
+      fields = fields.concat(round2BlockFields(distance));
+    });
+    return fields;
   }
 
   function countFields(fields) {
@@ -616,6 +947,10 @@
 
   function cap(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function distanceLabel(distance) {
+    return distance.replace('ft', ' ft');
   }
 
   function escapeHtml(value) {

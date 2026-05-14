@@ -3,11 +3,12 @@
 ## 1. Files created
 
 - `Code.gs` - Google Apps Script backend, Sheet setup, validation, scoring, duplicate attempt handling, best score update, dashboard rebuild, and troubleshooting log.
-- `Index.html` - Main web app shell.
-- `Styles.html` - iPad-friendly styling with large controls and clear proof screens.
-- `Script.html` - Student screen flow, local autosave, local score estimate, submit call, retry handling, and Backup Proof Only screen.
+- `Index.html` - Main web app shell with the color-strip sidebar and proof templates.
+- `Styles.html` - iPad-friendly color-strip kiosk styling with large controls and clear proof screens.
+- `Script.html` - Student screen flow, kiosk shot-entry UI, local autosave, local score estimate, submit call, retry handling, and Backup Proof Only screen.
 - `AGENTS.md` - Short project rules and first-pass agent workflow instructions.
 - `FIRST_PASS_BUILD_NOTES.md` - Setup, schema, deployment, limits, and QA notes.
+- `GPT55_UI_HANDOFF.md` - UI-specific handoff used to plan the color-strip kiosk pass.
 
 ## 2. Setup steps
 
@@ -37,7 +38,17 @@ Stores every non-duplicate student attempt.
 
 Columns:
 
-`Timestamp`, `Submission_ID`, `Client_Attempt_ID`, `Group_Key`, `Period`, `Group_Name`, `Member_Names`, `Score_Total`, `Score_Safety`, `Score_Round1_Data`, `Score_Round1_Science`, `Score_Round2_Video`, `Score_FBD`, `Score_Conservation`, `Score_Final`, `Percent`, `Emergency_Mode_Used`, `Needs_Review`, `Review_Reasons`, `App_Version`, `Score_Version`, `User_Agent`, `Prediction_Choice`, `Prediction_Explanation`, `Safety_Pompom_Only`, `Safety_Not_At_People`, `Setup_Basket_Backboard`, `Setup_Launch_Line`, `Setup_Round1_6ft`, `Setup_Video_Required`, `R1_Small_T1`, `R1_Small_T2`, `R1_Small_T3`, `R1_Medium_T1`, `R1_Medium_T2`, `R1_Medium_T3`, `R1_Large_T1`, `R1_Large_T2`, `R1_Large_T3`, `R1_Pattern_Choice`, `R1_Most_Elastic_Potential_Choice`, `R1_Best_For_6ft_Choice`, `Energy_Blank_1`, `Energy_Blank_2`, `R2_3ft_Stretch`, `R2_3ft_Result`, `R2_3ft_Video`, `R2_6ft_Stretch`, `R2_6ft_Result`, `R2_6ft_Video`, `R2_9ft_Stretch`, `R2_9ft_Result`, `R2_9ft_Video`, `Video_Email_Confirmed`, `Video_Sender_Email`, `Video_Clip_Description`, `FBD_Before_Up`, `FBD_Before_Down`, `FBD_Air_Down`, `FBD_Air_Back`, `Conservation_Q1`, `Conservation_Q2`, `Conservation_Q3`, `Final_Main_Idea`, `Final_Farther_Baskets_Stretch`, `Raw_JSON`
+The current ten-shot revision generates the trial columns instead of manually listing them all:
+
+- Round 1: `R1_Small_T1` through `R1_Small_T10`, `R1_Medium_T1` through `R1_Medium_T10`, and `R1_Large_T1` through `R1_Large_T10`
+- Round 2: each distance keeps one stretch field, 10 shot-result fields, and one legacy per-distance video column for schema compatibility:
+  - `R2_3ft_Stretch`, `R2_3ft_T1` through `R2_3ft_T10`, `R2_3ft_Video`
+  - `R2_6ft_Stretch`, `R2_6ft_T1` through `R2_6ft_T10`, `R2_6ft_Video`
+  - `R2_9ft_Stretch`, `R2_9ft_T1` through `R2_9ft_T10`, `R2_9ft_Video`
+
+The visible Round 2 shot-entry screen no longer asks for per-distance video. Video evidence is handled only on the separate Video Email screen. The legacy `R2_*_Video` columns remain so existing Sheet structure does not break.
+
+Other columns include identifiers, score subtotals, student answers, review flags, version fields, and `Raw_JSON`.
 
 ### Best_Scores
 
@@ -59,6 +70,8 @@ Stores:
 
 - Allowed periods: `1st hour`, `7th hour`
 - Teacher email: `patelk07@psdr3.org`
+- Round 1 trials per stretch: `10`
+- Round 2 trials per distance: `10`
 - App version
 - Score version
 
@@ -100,6 +113,6 @@ Students still email video evidence separately to `patelk07@psdr3.org`. This app
 5. Wrong free-body diagram labels should reduce the force score.
 6. Double-click or retry with the same `Client_Attempt_ID` should not append a duplicate raw row.
 7. Same group with a new attempt should append raw data and update `Best_Scores` only if higher or tied.
-8. Backup Proof Only should clearly say it has NOT submitted to Mr. Patel's Sheet.
+8. Backup Proof Only should clearly say it has NOT been submitted to Mr. Patel's Sheet.
 9. Submitted proof should clearly say it WAS submitted and show a submission ID.
 10. Refreshing the iPad mid-lab should restore saved local work and show the saved-work warning.
