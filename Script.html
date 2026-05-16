@@ -2,49 +2,92 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'cps_rubber_band_lab_first_pass';
-  var teacherEmail = 'patelk07@psdr3.org';
-  var resultChoices = ['Made', 'Missed short', 'Missed long', 'Missed side'];
-  var resultMeta = {
-    'Made': { label: 'MADE', icon: '&#10003;', key: 'made' },
-    'Missed short': { label: 'MISSED SHORT', icon: '&uarr;', key: 'short' },
-    'Missed long': { label: 'MISSED LONG', icon: '&rarr;', key: 'long' },
-    'Missed side': { label: 'MISSED SIDE', icon: '&harr;', key: 'side' }
+  var CONFIG = {
+    storageKey: 'cps_rubber_band_lab_first_pass',
+    teacherEmail: 'patelk07@psdr3.org',
+    resultChoices: ['Made', 'Missed short', 'Missed long', 'Missed side'],
+    resultMeta: {
+      'Made': { label: 'MADE', icon: '&#10003;', key: 'made' },
+      'Missed short': { label: 'MISSED SHORT', icon: '&uarr;', key: 'short' },
+      'Missed long': { label: 'MISSED LONG', icon: '&rarr;', key: 'long' },
+      'Missed side': { label: 'MISSED SIDE', icon: '&harr;', key: 'side' }
+    },
+    stretchChoices: ['Small', 'Medium', 'Large'],
+    forceChoices: ['', 'Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'],
+    round1TrialsPerStretch: 10,
+    round2TrialsPerDistance: 10,
+    round1StretchKeys: ['small', 'medium', 'large'],
+    round2DistanceKeys: ['3ft', '6ft', '9ft']
   };
-  var stretchChoices = ['Small', 'Medium', 'Large'];
-  var forceChoices = ['', 'Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
-  var ROUND1_TRIALS_PER_STRETCH = 10;
-  var ROUND2_TRIALS_PER_DISTANCE = 10;
-  var ROUND1_STRETCH_KEYS = ['small', 'medium', 'large'];
-  var ROUND2_DISTANCE_KEYS = ['3ft', '6ft', '9ft'];
-  var screens = [
-    { key: 'start', label: 'Start', render: renderStart },
+
+  var STORAGE_KEY = CONFIG.storageKey;
+  var teacherEmail = CONFIG.teacherEmail;
+  var resultChoices = CONFIG.resultChoices;
+  var resultMeta = CONFIG.resultMeta;
+  var stretchChoices = CONFIG.stretchChoices;
+  var forceChoices = CONFIG.forceChoices;
+  var ROUND1_TRIALS_PER_STRETCH = CONFIG.round1TrialsPerStretch;
+  var ROUND2_TRIALS_PER_DISTANCE = CONFIG.round2TrialsPerDistance;
+  var ROUND1_STRETCH_KEYS = CONFIG.round1StretchKeys;
+  var ROUND2_DISTANCE_KEYS = CONFIG.round2DistanceKeys;
+
+  CONFIG.screens = [
+    { key: 'start', label: 'Group Info', render: renderStart },
     { key: 'safety', label: 'Safety', render: renderSafety },
     { key: 'prediction', label: 'Prediction', render: renderPrediction },
     { key: 'round1', label: 'Round 1', render: renderRound1 },
-    { key: 'pattern', label: 'Round 1 Pattern', render: renderPattern },
-    { key: 'energy', label: 'Energy Vocabulary', render: renderEnergy },
+    { key: 'analysis1', label: 'Analysis 1', render: renderAnalysis1 },
     { key: 'round2', label: 'Round 2', render: renderRound2 },
     { key: 'video', label: 'Video Email', render: renderVideo },
     { key: 'fbd', label: 'Free-Body Diagrams', render: renderFbd },
-    { key: 'conservation', label: 'Conservation', render: renderConservation },
-    { key: 'final', label: 'Final Conclusion', render: renderFinal },
+    { key: 'finalQs', label: 'Final Qs', render: renderFinalQs },
     { key: 'review', label: 'Review/Submit', render: renderReview }
   ];
-  var sidebarSteps = [
-    { label: 'Group Info', keys: ['start'] },
-    { label: 'Safety', keys: ['safety'] },
-    { label: 'Prediction', keys: ['prediction'] },
-    { label: 'Round 1', keys: ['round1'] },
-    { label: 'Analysis 1', keys: ['pattern', 'energy'] },
-    { label: 'Round 2', keys: ['round2'] },
-    { label: 'Video Email', keys: ['video'] },
-    { label: 'FBD', keys: ['fbd'] },
-    { label: 'Final Qs', keys: ['conservation', 'final'] },
-    { label: 'Review & Submit', keys: ['review'] }
-  ];
 
-  var state = loadState();
+  CONFIG.sidebarSteps = CONFIG.screens.map(function (screen) {
+    return { label: screen.label === 'Free-Body Diagrams' ? 'FBD' : (screen.label === 'Review/Submit' ? 'Review & Submit' : screen.label), keys: [screen.key] };
+  });
+
+  var screens = CONFIG.screens;
+  var sidebarSteps = CONFIG.sidebarSteps;
+
+  var stateStore = {
+    fresh: freshState,
+    load: loadState,
+    save: saveState
+  };
+  var fieldModel = {
+    round1Fields: r1Fields,
+    round2ShotFields: r2ShotFields,
+    round2StretchFields: r2StretchFields,
+    round2CompletionFields: r2CompletionFields
+  };
+  var validation = {
+    screenBlocker: getScreenBlocker,
+    screenWarning: getScreenWarning,
+    submissionBlocker: getSubmissionBlocker,
+    submissionWarning: getSubmissionWarning
+  };
+  var renderers = {
+    screen: screenWrap,
+    select: selectField,
+    reviewItem: reviewItem,
+    proofItem: proofItem
+  };
+  var shotKiosk = {
+    render: renderTenShotKiosk,
+    renderBlocks: renderBlockButtons,
+    recordResult: recordKioskResult,
+    setBlock: setKioskBlock,
+    setTrial: setKioskTrial
+  };
+  var submission = {
+    submit: submitLab,
+    showSubmittedProof: showSubmittedProof,
+    showBackupProof: showBackupProof
+  };
+
+  var state = stateStore.load();
   var host = document.getElementById('screenHost');
   var sideNav = document.getElementById('sideNav');
   var backBtn = document.getElementById('backBtn');
@@ -80,6 +123,11 @@
     }
     if (screens[state.screenIndex].key === 'review') {
       submitLab();
+      return;
+    }
+    var blocker = getScreenBlocker(screens[state.screenIndex].key);
+    if (blocker) {
+      window.alert(blocker);
       return;
     }
     var warning = getScreenWarning(screens[state.screenIndex].key);
@@ -257,9 +305,15 @@
       });
     });
 
-    host.querySelectorAll('[data-kiosk-block]').forEach(function (select) {
+    host.querySelectorAll('[data-kiosk-block-select]').forEach(function (select) {
       select.addEventListener('change', function () {
         setKioskBlock(select.getAttribute('data-kiosk-round'), select.value);
+      });
+    });
+
+    host.querySelectorAll('[data-kiosk-block-button]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        setKioskBlock(button.getAttribute('data-kiosk-round'), button.getAttribute('data-kiosk-block-button'));
       });
     });
 
@@ -338,16 +392,66 @@
   }
 
   function advanceToNextBlank(roundKey) {
-    var fields = roundKey === 'round1' ? round1BlockFields(state.ui.round1Stretch) : round2BlockFields(state.ui.round2Distance);
+    var fields = getActiveBlockFields(roundKey);
     var current = roundKey === 'round1' ? state.ui.round1Trial : state.ui.round2Trial;
-    for (var offset = 1; offset <= fields.length; offset++) {
+    for (var offset = 1; offset < fields.length; offset++) {
       var trial = ((current + offset - 1) % fields.length) + 1;
       if (!state.responses[fields[trial - 1]]) {
         setActiveTrialNoRender(roundKey, trial);
         return;
       }
     }
+
+    if (isActiveBlockComplete(roundKey)) {
+      moveToNextIncompleteBlock(roundKey);
+      return;
+    }
+
     setActiveTrialNoRender(roundKey, current);
+  }
+
+  function getActiveBlockFields(roundKey) {
+    return roundKey === 'round1' ? round1BlockFields(state.ui.round1Stretch) : round2BlockFields(state.ui.round2Distance);
+  }
+
+  function isActiveBlockComplete(roundKey) {
+    var fields = getActiveBlockFields(roundKey);
+    var shotsComplete = countFields(fields) >= fields.length;
+    if (roundKey === 'round1') return shotsComplete;
+    return shotsComplete && !!state.responses['r2_' + state.ui.round2Distance + '_stretch'];
+  }
+
+  function moveToNextIncompleteBlock(roundKey) {
+    var blocks = roundKey === 'round1' ? ROUND1_STRETCH_KEYS : ROUND2_DISTANCE_KEYS;
+    var currentBlock = roundKey === 'round1' ? state.ui.round1Stretch : state.ui.round2Distance;
+    var startIndex = Math.max(blocks.indexOf(currentBlock), 0);
+    for (var offset = 1; offset <= blocks.length; offset++) {
+      var block = blocks[(startIndex + offset) % blocks.length];
+      if (!isBlockComplete(roundKey, block)) {
+        setActiveBlockNoRender(roundKey, block);
+        setActiveTrialNoRender(roundKey, firstBlankTrial(getBlockFields(roundKey, block), roundKey === 'round1' ? ROUND1_TRIALS_PER_STRETCH : ROUND2_TRIALS_PER_DISTANCE));
+        return;
+      }
+    }
+  }
+
+  function isBlockComplete(roundKey, block) {
+    var fields = getBlockFields(roundKey, block);
+    var shotsComplete = countFields(fields) >= fields.length;
+    if (roundKey === 'round1') return shotsComplete;
+    return shotsComplete && !!state.responses['r2_' + block + '_stretch'];
+  }
+
+  function getBlockFields(roundKey, block) {
+    return roundKey === 'round1' ? round1BlockFields(block) : round2BlockFields(block);
+  }
+
+  function setActiveBlockNoRender(roundKey, block) {
+    if (roundKey === 'round1') {
+      state.ui.round1Stretch = block;
+    } else if (roundKey === 'round2') {
+      state.ui.round2Distance = block;
+    }
   }
 
   function firstBlankTrial(fields, max) {
@@ -441,6 +545,23 @@
       selectField('Which stretch worked best for the 6 ft basket?', 'r1_best_for_6ft_choice', ['', 'Small stretch', 'Medium stretch', 'Large stretch', 'No clear best stretch'], 'Choose one'));
   }
 
+  function renderAnalysis1() {
+    return screenWrap('Analysis 1',
+      'Use your Round 1 data to answer the pattern and energy questions.',
+      '<div class="mini-note">Checkpoint: Talk with your group before Round 2. More stretch usually stores more elastic potential energy.</div>' +
+      '<div class="station-grid">' +
+        '<section class="station-card"><h3>Round 1 Pattern</h3>' +
+          selectField('What pattern did your group notice?', 'r1_pattern_choice', ['', 'More stretch usually made the pom-pom go farther.', 'More stretch usually made the pom-pom go shorter.', 'Stretch did not seem to matter.'], 'Choose one') +
+          selectField('Which stretch stored the most elastic potential energy?', 'r1_most_elastic_potential_choice', ['', 'Small stretch', 'Medium stretch', 'Large stretch'], 'Choose one') +
+          selectField('Which stretch worked best for the 6 ft basket?', 'r1_best_for_6ft_choice', ['', 'Small stretch', 'Medium stretch', 'Large stretch', 'No clear best stretch'], 'Choose one') +
+        '</section>' +
+        '<section class="station-card"><h3>Energy Vocabulary</h3>' +
+          selectField('A stretched rubber band stores _____ potential energy.', 'energy_blank_1', ['', 'elastic', 'kinetic', 'magnetic', 'thermal'], 'Choose word') +
+          selectField('A moving pom-pom has _____ energy.', 'energy_blank_2', ['', 'elastic', 'kinetic', 'magnetic', 'thermal'], 'Choose word') +
+        '</section>' +
+      '</div>');
+  }
+
   function renderEnergy() {
     return screenWrap('Energy Vocabulary',
       'Complete the energy sentences.',
@@ -491,6 +612,7 @@
           '<button class="info-button" type="button" data-info-alert="' + escapeHtml(infoText) + '">Info</button>' +
         '</div>' +
       '</div>' +
+      '<div class="kiosk-block-buttons">' + renderBlockButtons(config) + '</div>' +
       '<div class="trial-progress-card">' +
         '<div class="trial-progress-title">TRIAL PROGRESS</div>' +
         '<div class="trial-number-row">' + renderTrialNumbers(config.roundKey, config.fields, activeIndex) + '</div>' +
@@ -506,18 +628,30 @@
       '</div>' +
       '<div class="kiosk-controls">' +
         '<button class="secondary kiosk-back" type="button" data-local-back="true">Back</button>' +
-        '<label class="kiosk-select-label">' + escapeHtml(config.blockLabel) +
-          '<select class="kiosk-select" data-kiosk-round="' + config.roundKey + '" data-kiosk-block="true">' +
-            config.blockOptions.map(function (option) {
-              return '<option value="' + escapeHtml(option.value) + '"' + (option.value === config.blockValue ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>';
-            }).join('') +
-          '</select>' +
-        '</label>' +
         '<button class="primary kiosk-next" type="button" data-kiosk-round="' + config.roundKey + '" data-kiosk-next="true">Next Trial</button>' +
       '</div>' +
       '<div class="email-reminder-strip">Video evidence is email-only to ' + teacherEmail + '</div>' +
       '<div class="kiosk-bottom-note">' + escapeHtml(config.bottomNote) + '</div>' +
     '</section>';
+  }
+
+  function renderBlockButtons(config) {
+    return config.blockOptions.map(function (option) {
+      var fields = config.roundKey === 'round1' ? round1BlockFields(option.value) : round2BlockFields(option.value);
+      var complete = countFields(fields);
+      var isActive = option.value === config.blockValue;
+      var isComplete = complete >= fields.length;
+      var stretchField = config.roundKey === 'round2' ? 'r2_' + option.value + '_stretch' : '';
+      var needsStretch = stretchField && !state.responses[stretchField];
+      var classes = ['kiosk-block-button'];
+      if (isActive) classes.push('active');
+      if (isComplete && !needsStretch) classes.push('complete');
+      if (needsStretch) classes.push('needs-stretch');
+      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + config.roundKey + '" data-kiosk-block-button="' + escapeHtml(option.value) + '">' +
+        '<strong>' + escapeHtml(option.label) + '</strong>' +
+        '<span>' + complete + ' / ' + fields.length + (needsStretch ? ' + stretch' : '') + '</span>' +
+      '</button>';
+    }).join('');
   }
 
   function renderProgressDots(fields, activeIndex) {
@@ -624,6 +758,28 @@
         'D. The backboard created gravity.'
       ], 'Choose one') +
       selectField('For farther baskets, our group usually needed _____ stretch.', 'final_farther_baskets_stretch', ['', 'less', 'more', 'no'], 'Choose word'));
+  }
+
+  function renderFinalQs() {
+    return screenWrap('Final Qs',
+      'Finish the energy questions and choose the best conclusion.',
+      '<div class="station-grid">' +
+        '<section class="station-card"><h3>Energy Conservation</h3>' +
+          selectField('Energy disappears when the pom-pom stops moving.', 'conservation_q1', ['', 'True', 'False'], 'Choose') +
+          selectField('Some energy changes into sound, heat, and air movement.', 'conservation_q2', ['', 'True', 'False'], 'Choose') +
+          selectField('Pulling the rubber band farther usually stores more elastic potential energy.', 'conservation_q3', ['', 'True', 'False'], 'Choose') +
+        '</section>' +
+        '<section class="station-card"><h3>Final Conclusion</h3>' +
+          selectField('What was the main idea of this lab?', 'final_main_idea', [
+            '',
+            'A. Stretching the rubber band more can store more elastic potential energy, which can give the pom-pom more motion.',
+            'B. Magnetic force made the pom-pom move toward the basket.',
+            'C. The pom-pom moved because energy disappeared.',
+            'D. The backboard created gravity.'
+          ], 'Choose one') +
+          selectField('For farther baskets, our group usually needed _____ stretch.', 'final_farther_baskets_stretch', ['', 'less', 'more', 'no'], 'Choose word') +
+        '</section>' +
+      '</div>');
   }
 
   function renderReview() {
@@ -785,21 +941,26 @@
     nextBtn.textContent = 'Return to Lab';
   }
 
-  function getScreenWarning(key) {
+  function getScreenBlocker(key) {
     if (key === 'start') {
-      if (!state.responses.period || !state.responses.group_name) return 'Period and group name are required.';
+      if (!state.responses.period) return 'Choose your period before moving on.';
+      if (!state.responses.group_name) return 'Enter your group name before moving on.';
       if (countMemberNames(state.responses.member_names) < 2) return 'Enter at least 2 group member names. Groups should be 3-4. Ask your teacher if your group has only 2.';
     }
     if (key === 'safety') {
       var allSafe = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'].every(function (field) {
         return !!state.responses[field];
       });
-      if (!allSafe) return 'All safety boxes should be checked before launching.';
+      if (!allSafe) return 'Check every safety box before launching.';
     }
-    if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for each stretch.';
-    if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots for each distance and choose the stretch used.';
     if (key === 'video' && state.responses.video_email_confirmed === 'Yes' && !state.responses.video_sender_email) return 'Enter the school email that sent the video.';
     if (key === 'video' && state.responses.video_sender_email && !isEmailLike(state.responses.video_sender_email)) return 'Enter the school email that sent the video, like name@psdr3.org.';
+    return '';
+  }
+
+  function getScreenWarning(key) {
+    if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for each stretch.';
+    if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots for each distance and choose the stretch used.';
     return '';
   }
 

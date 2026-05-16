@@ -1,19 +1,30 @@
-var APP_VERSION = '2026-05-12-ten-shot-trials';
-var SCORE_VERSION = 'rbbl-score-v2';
-var TEACHER_EMAIL = 'patelk07@psdr3.org';
-var ALLOWED_PERIODS = ['1st hour', '7th hour'];
-var ROUND1_TRIALS_PER_STRETCH = 10;
-var ROUND2_TRIALS_PER_DISTANCE = 10;
-var ROUND1_STRETCH_KEYS = ['small', 'medium', 'large'];
-var ROUND2_DISTANCE_KEYS = ['3ft', '6ft', '9ft'];
-
-var SHEET_NAMES = {
-  raw: 'Submissions_Raw',
-  best: 'Best_Scores',
-  dashboard: 'Dashboard',
-  settings: 'Settings',
-  log: 'Troubleshooting_Log'
+var SERVER_CONFIG = {
+  appVersion: '2026-05-12-ten-shot-trials',
+  scoreVersion: 'rbbl-score-v2',
+  teacherEmail: 'patelk07@psdr3.org',
+  allowedPeriods: ['1st hour', '7th hour'],
+  round1TrialsPerStretch: 10,
+  round2TrialsPerDistance: 10,
+  round1StretchKeys: ['small', 'medium', 'large'],
+  round2DistanceKeys: ['3ft', '6ft', '9ft'],
+  sheetNames: {
+    raw: 'Submissions_Raw',
+    best: 'Best_Scores',
+    dashboard: 'Dashboard',
+    settings: 'Settings',
+    log: 'Troubleshooting_Log'
+  }
 };
+
+var APP_VERSION = SERVER_CONFIG.appVersion;
+var SCORE_VERSION = SERVER_CONFIG.scoreVersion;
+var TEACHER_EMAIL = SERVER_CONFIG.teacherEmail;
+var ALLOWED_PERIODS = SERVER_CONFIG.allowedPeriods;
+var ROUND1_TRIALS_PER_STRETCH = SERVER_CONFIG.round1TrialsPerStretch;
+var ROUND2_TRIALS_PER_DISTANCE = SERVER_CONFIG.round2TrialsPerDistance;
+var ROUND1_STRETCH_KEYS = SERVER_CONFIG.round1StretchKeys;
+var ROUND2_DISTANCE_KEYS = SERVER_CONFIG.round2DistanceKeys;
+var SHEET_NAMES = SERVER_CONFIG.sheetNames;
 
 var RAW_COLUMNS = [
   'Timestamp', 'Submission_ID', 'Client_Attempt_ID', 'Group_Key', 'Period', 'Group_Name', 'Member_Names',

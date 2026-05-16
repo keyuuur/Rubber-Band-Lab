@@ -299,11 +299,24 @@
     gap: 14px;
   }
 
-  .card {
+  .card,
+  .station-card {
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 14px;
     background: #fff;
+  }
+
+  .station-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .station-card {
+    display: grid;
+    align-content: start;
+    gap: 12px;
   }
 
   .result-buttons {
@@ -524,6 +537,50 @@
     text-align: center;
   }
 
+  .kiosk-block-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .kiosk-block-button {
+    display: grid;
+    gap: 6px;
+    min-height: 76px;
+    padding: 12px;
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ink);
+    text-align: left;
+    box-shadow: 0 8px 18px rgba(7, 24, 63, 0.06);
+  }
+
+  .kiosk-block-button strong {
+    font-size: 1.05rem;
+  }
+
+  .kiosk-block-button span {
+    color: var(--muted);
+    font-weight: 900;
+  }
+
+  .kiosk-block-button.active {
+    border-color: var(--primary);
+    background: var(--blue-soft);
+    box-shadow: 0 0 0 4px rgba(20, 85, 217, 0.12);
+  }
+
+  .kiosk-block-button.complete {
+    border-color: var(--green);
+    background: var(--green-soft);
+  }
+
+  .kiosk-block-button.needs-stretch {
+    border-color: var(--orange);
+    background: var(--orange-soft);
+  }
+
   .kiosk-stretch-row {
     max-width: 420px;
     justify-self: center;
@@ -700,7 +757,7 @@
 
   .kiosk-controls {
     display: grid;
-    grid-template-columns: minmax(110px, 140px) minmax(220px, 280px) minmax(140px, 180px);
+    grid-template-columns: minmax(110px, 160px) minmax(140px, 190px);
     justify-content: space-between;
     align-items: end;
     gap: 18px;
@@ -968,6 +1025,10 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .kiosk-block-buttons {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .ten-shot-tiles {
       grid-template-columns: repeat(5, minmax(70px, 1fr));
     }
@@ -998,6 +1059,11 @@
       padding: 14px;
     }
 
+    .station-grid,
+    .kiosk-block-buttons {
+      grid-template-columns: 1fr;
+    }
+
     .review-item, .proof-grid div {
       grid-template-columns: 1fr;
     }
@@ -1011,7 +1077,13 @@
     }
 
     .nav-bar {
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
       grid-template-columns: 1fr;
+      padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      box-shadow: 0 -10px 24px rgba(7, 24, 63, 0.08);
     }
   }
 </style>
