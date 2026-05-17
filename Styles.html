@@ -405,6 +405,56 @@
     margin: 12px 0;
   }
 
+  .member-builder {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .member-builder p {
+    margin: 0;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .member-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+    gap: 10px;
+  }
+
+  .member-count {
+    color: var(--muted);
+    font-weight: 800;
+  }
+
+  .member-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .member-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 8px 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--blue-soft);
+    color: var(--ink);
+    font-weight: 900;
+  }
+
+  .member-empty {
+    color: var(--muted);
+    font-weight: 800;
+  }
+
   .kiosk-screen {
     display: grid;
     gap: 20px;
@@ -453,27 +503,6 @@
     font-weight: 900;
   }
 
-  .progress-dots {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
-
-  .progress-dot {
-    width: 16px;
-    height: 16px;
-    border-radius: 999px;
-    background: var(--gray);
-  }
-
-  .progress-dot.filled {
-    background: var(--primary);
-  }
-
-  .progress-dot.active {
-    outline: 3px solid rgba(20, 85, 217, 0.2);
-  }
-
   .info-button {
     min-height: 44px;
     padding: 8px 16px;
@@ -481,53 +510,6 @@
     background: #fff;
     color: var(--primary);
     border-radius: 10px;
-  }
-
-  .trial-progress-card {
-    overflow: hidden;
-    border: 1px solid #aab9d0;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: var(--shadow);
-  }
-
-  .trial-progress-title {
-    padding: 12px;
-    background: linear-gradient(180deg, #176bff, var(--primary));
-    color: #fff;
-    text-align: center;
-    font-weight: 900;
-    letter-spacing: 0;
-  }
-
-  .trial-number-row {
-    display: grid;
-    grid-template-columns: repeat(10, 1fr);
-    gap: 10px;
-    padding: 18px 22px;
-  }
-
-  .trial-number {
-    display: grid;
-    place-items: center;
-    min-width: 46px;
-    min-height: 46px;
-    border: 2px solid transparent;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--ink);
-    font-size: 1.35rem;
-    font-weight: 900;
-  }
-
-  .trial-number.complete {
-    background: var(--primary);
-    color: #fff;
-  }
-
-  .trial-number.active {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 5px rgba(20, 85, 217, 0.12);
   }
 
   .kiosk-context {
@@ -581,6 +563,13 @@
     background: var(--orange-soft);
   }
 
+  .kiosk-block-button.locked {
+    border-color: #c9d3df;
+    background: #eef2f6;
+    color: #627084;
+    box-shadow: none;
+  }
+
   .kiosk-stretch-row {
     max-width: 420px;
     justify-self: center;
@@ -597,7 +586,7 @@
 
   .result-button-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 22px;
   }
 
@@ -622,12 +611,12 @@
     color: var(--green);
   }
 
-  .result-button.short {
-    color: var(--orange);
+  .result-button.missed {
+    color: var(--red);
   }
 
-  .result-button.long {
-    color: var(--red);
+  .result-button.short {
+    color: var(--orange);
   }
 
   .result-button.side {
@@ -643,11 +632,7 @@
     background: var(--green-soft);
   }
 
-  .result-button.short.selected {
-    background: var(--orange-soft);
-  }
-
-  .result-button.long.selected {
+  .result-button.missed.selected {
     background: var(--red-soft);
   }
 
@@ -718,8 +703,8 @@
     background: var(--orange);
   }
 
-  .ten-shot-tile.complete.long em,
-  .legend-item.long em {
+  .ten-shot-tile.complete.missed em,
+  .legend-item.missed em {
     background: var(--red);
   }
 
@@ -778,15 +763,6 @@
     border-color: var(--line);
   }
 
-  .email-reminder-strip {
-    margin: 0 -20px -20px;
-    padding: 14px 22px;
-    border-top: 1px solid #cdd8ea;
-    background: #edf5ff;
-    color: var(--primary-dark);
-    font-weight: 900;
-  }
-
   .kiosk-bottom-note {
     color: var(--muted);
     text-align: center;
@@ -827,23 +803,6 @@
     background: #6b7280;
     margin: 8px auto 0;
     border-radius: 999px;
-  }
-
-  .email-box {
-    display: grid;
-    gap: 10px;
-    padding: 14px;
-    border: 2px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
-    margin-bottom: 14px;
-  }
-
-  .copy-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
   }
 
   code {

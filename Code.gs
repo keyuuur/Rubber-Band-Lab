@@ -1,6 +1,6 @@
 var SERVER_CONFIG = {
-  appVersion: '2026-05-12-ten-shot-trials',
-  scoreVersion: 'rbbl-score-v2',
+  appVersion: '2026-05-17-first-hour-adjustments',
+  scoreVersion: 'rbbl-score-v3-first-hour',
   teacherEmail: 'patelk07@psdr3.org',
   allowedPeriods: ['1st hour', '7th hour'],
   round1TrialsPerStretch: 10,
@@ -52,7 +52,7 @@ var BEST_COLUMNS = [
 ];
 
 var LOG_COLUMNS = ['Timestamp', 'Type', 'Message', 'Details'];
-var RESULT_CHOICES = ['Made', 'Missed short', 'Missed long', 'Missed side'];
+var RESULT_CHOICES = ['Made', 'Missed'];
 var YES_NO_CHOICES = ['Yes', 'No'];
 var STRETCH_CHOICES = ['Small', 'Medium', 'Large'];
 var FORCE_CHOICES = ['Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
@@ -204,7 +204,7 @@ function scoreSubmission(payload) {
 
   var safetyFields = [
     'safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard',
-    'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'
+    'setup_launch_line', 'setup_round1_6ft'
   ];
   score.safety = safetyFields.every(function(field) { return isYesish_(payload[field]); }) ? 2 : 0;
 
@@ -219,7 +219,7 @@ function scoreSubmission(payload) {
   var r2Fields = getRound2CompletionFieldNames_();
   var r2Count = countFilled_(payload, r2Fields);
   score.round2Video = r2Count >= r2Fields.length ? 2 : (r2Count >= (ROUND2_TRIALS_PER_DISTANCE + 1) * 2 ? 1 : 0);
-  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && hasText_(payload.video_sender_email)) score.round2Video += 1;
+  score.round2Video += 1;
 
   if (equalsChoice_(payload.fbd_before_up, 'Normal force')) score.fbd += 1;
   if (equalsChoice_(payload.fbd_before_down, 'Gravity')) score.fbd += 1;
@@ -377,22 +377,6 @@ function validateSubmission_(payload) {
       ok: false,
       errorCode: 'NOT_ENOUGH_MEMBERS',
       message: 'Enter at least 2 group member names. Groups should be 3-4. Ask your teacher if your group has only 2.'
-    };
-  }
-
-  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && !hasText_(payload.video_sender_email)) {
-    return {
-      ok: false,
-      errorCode: 'VIDEO_EMAIL_REQUIRED',
-      message: 'If your group emailed video evidence, enter the school email that sent it.'
-    };
-  }
-
-  if (hasText_(payload.video_sender_email) && !isEmailLike_(payload.video_sender_email)) {
-    return {
-      ok: false,
-      errorCode: 'INVALID_VIDEO_EMAIL',
-      message: 'Enter the school email that sent the video, like name@psdr3.org.'
     };
   }
 
@@ -587,7 +571,6 @@ function buildReviewFlags_(payload, score) {
   var reasons = [];
   var r1Fields = getRound1FieldNames_();
   var r2Fields = getRound2CompletionFieldNames_();
-  if (!equalsChoice_(payload.video_email_confirmed, 'Yes')) reasons.push('Video email not confirmed');
   if (score.total < 12) reasons.push('Low score');
   if (countFilled_(payload, r1Fields) < r1Fields.length) reasons.push('Round 1 trials incomplete');
   if (countFilled_(payload, r2Fields) < r2Fields.length) reasons.push('Round 2 entries incomplete');
@@ -650,8 +633,15 @@ function payloadFingerprint_(payload) {
   var ignored = {
     user_agent: true,
     emergency_mode_used: true,
-    server_submission_id: true
+    server_submission_id: true,
+    setup_video_required: true,
+    video_email_confirmed: true,
+    video_sender_email: true,
+    video_clip_description: true
   };
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    ignored['r2_' + distance + '_video'] = true;
+  });
   var cleaned = sanitizePayload_(payload || {});
   var parts = [];
   Object.keys(schema).sort().forEach(function(field) {
@@ -787,7 +777,32 @@ function sanitizePayload_(payload) {
       cleaned[key] = value;
     }
   });
+  normalizeShotResultFields_(cleaned);
   return cleaned;
+}
+
+function normalizeShotResultFields_(payload) {
+  getRound1FieldNames_().concat(getRound2ShotFieldNames_()).forEach(function(field) {
+    if (hasText_(payload[field])) payload[field] = normalizeShotResult_(payload[field]);
+  });
+}
+
+function getRound2ShotFieldNames_() {
+  var fields = [];
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      fields.push('r2_' + distance + '_t' + i);
+    }
+  });
+  return fields;
+}
+
+function normalizeShotResult_(value) {
+  var normalized = normalizeText_(value);
+  if (!normalized) return '';
+  if (normalized === 'made') return 'Made';
+  if (normalized === 'missed' || normalized === 'missed short' || normalized === 'missed long' || normalized === 'missed side') return 'Missed';
+  return value;
 }
 
 function getHeaders_(sheet) {
