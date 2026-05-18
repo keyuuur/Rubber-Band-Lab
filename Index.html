@@ -28,7 +28,10 @@
             <p class="eyebrow">Concepts of Physical Systems</p>
             <h1>Rubber Band Basket Launch</h1>
           </div>
-          <button id="backupBtn" class="secondary small" type="button">Backup Proof Only</button>
+          <div class="top-actions">
+            <button id="backupBtn" class="secondary small" type="button">Backup Proof Only</button>
+            <button id="resetBtn" class="danger small reset-utility" type="button">Reset Work</button>
+          </div>
         </header>
 
         <section id="resumeWarning" class="notice hidden">
@@ -50,7 +53,6 @@
 
         <nav class="nav-bar">
           <button id="backBtn" class="secondary" type="button">Back</button>
-          <button id="resetBtn" class="danger" type="button">Reset</button>
           <button id="nextBtn" class="primary" type="button">Next</button>
         </nav>
       </main>
@@ -68,8 +70,9 @@
     <template id="backupTemplate">
       <section class="proof backup">
         <h2>Backup Proof Only</h2>
-        <p class="big-status">This has NOT been submitted to Mr. Patel's Sheet.</p>
-        <p>Show Mr. Patel now or take a screenshot. Do not reset this iPad until he says it is okay.</p>
+        <p class="big-status">STOP: This is NOT submitted.</p>
+        <p class="backup-warning">This screen is only backup proof from this iPad. It has NOT saved to Mr. Patel's Sheet.</p>
+        <p>Show Mr. Patel now or take a screenshot. Do not leave or reset this iPad until he says it is okay.</p>
         <div id="backupDetails" class="proof-grid"></div>
         <details>
           <summary>Teacher backup code</summary>

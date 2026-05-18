@@ -59,7 +59,7 @@ Students:
 4. Record Round 1 launch trials at 6 ft.
 5. Answer pattern and energy questions.
 6. Record Round 2 distance challenge trials.
-7. Confirm video evidence was emailed.
+7. Continue directly to FBD. Video evidence is retired from the student-facing app.
 8. Answer free-body diagram dropdown questions.
 9. Answer conservation/final conclusion questions.
 10. Review and submit.
@@ -80,7 +80,7 @@ Important student-facing wording:
 - Never use `Emergency Submit`
 - Backup Proof Only must clearly say the work has `NOT submitted` to Mr. Patel's Sheet
 - Submitted proof must clearly say the work `WAS submitted` and show a Submission ID
-- Video evidence is email-only to `patelk07@psdr3.org`
+- Video evidence is retired from the student-facing app; do not add upload or confirmation fields
 - Do not add video upload
 
 Backend truth:
@@ -249,7 +249,7 @@ Required QA scenarios:
 2. Missing group name is blocked.
 3. One member name is blocked.
 4. Two member names are accepted.
-5. Video Yes with blank sender email is blocked.
+5. No Video Email screen or video confirmation fields are shown.
 6. Backup Proof Only clearly says NOT submitted.
 7. Submitted proof clearly says submitted and shows Submission ID.
 8. Round 1 clearly shows 10 shots for Small, Medium, and Large.
@@ -350,4 +350,3 @@ Return the work in this structure:
 ## Final Reminder
 
 The best UI pass here is not a flashy redesign. It is a calmer, faster, more mistake-proof student recording flow for 60 quick trial results on an iPad.
-

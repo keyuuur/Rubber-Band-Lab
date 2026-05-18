@@ -143,12 +143,15 @@
     }
     var message = state.mode === 'submitted'
       ? 'Clear the submitted proof from this iPad? Only do this after Mr. Patel has checked the submission ID.'
-      : 'Are you sure you want to clear this group\'s work?';
-    if (window.confirm(message)) {
+      : 'This will clear this group\'s saved work from this iPad.';
+    var typed = window.prompt(message + '\n\nType RESET to clear it.');
+    if (typed === 'RESET') {
       localStorage.removeItem(STORAGE_KEY);
       state = freshState(false);
       render();
       document.getElementById('resumeWarning').classList.add('hidden');
+    } else if (typed !== null) {
+      window.alert('Reset canceled. The saved work is still on this iPad.');
     }
   });
 
@@ -466,7 +469,10 @@
 
   function setKioskBlock(roundKey, value) {
     if (roundKey === 'round1' && ROUND1_STRETCH_KEYS.indexOf(value) > -1) {
-      if (isRound1BlockLocked(value)) return;
+      if (isRound1BlockLocked(value)) {
+        window.alert(getRound1LockMessage(value));
+        return;
+      }
       state.ui.round1Stretch = value;
       state.ui.round1Trial = firstBlankTrial(round1BlockFields(value), ROUND1_TRIALS_PER_STRETCH);
     } else if (roundKey === 'round2' && ROUND2_DISTANCE_KEYS.indexOf(value) > -1) {
@@ -594,6 +600,15 @@
       if (!isBlockComplete('round1', ROUND1_STRETCH_KEYS[i])) return true;
     }
     return false;
+  }
+
+  function getRound1LockMessage(block) {
+    var index = ROUND1_STRETCH_KEYS.indexOf(block);
+    for (var i = 0; i < index; i++) {
+      var previous = ROUND1_STRETCH_KEYS[i];
+      if (!isBlockComplete('round1', previous)) return 'Finish ' + stretchDisplayLabel(previous) + ' first';
+    }
+    return 'Finish the earlier stretch first';
   }
 
   function getKioskNextLabel(roundKey) {
@@ -755,6 +770,16 @@
 
   function renderRound2() {
     var distance = state.ui.round2Distance;
+    var distanceFields = round2BlockFields(distance);
+    var shotsComplete = countFields(distanceFields) >= distanceFields.length;
+    var stretchField = 'r2_' + distance + '_stretch';
+    var stretchAnswered = !!state.responses[stretchField];
+    var afterShotsControls = shotsComplete
+      ? '<div class="kiosk-stretch-row after-shots' + (stretchAnswered ? '' : ' needs-answer') + '">' +
+          (!stretchAnswered ? '<p class="inline-blocker">Choose which stretch worked best before moving on.</p>' : '') +
+          selectField('Which stretch worked best for this distance?', stretchField, ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
+        '</div>'
+      : '<div class="kiosk-stretch-row after-shots pending">Finish all 10 shots for this distance. Then choose which stretch worked best.</div>';
     return renderTenShotKiosk({
       roundKey: 'round2',
       title: 'ROUND 2 - ' + distanceLabel(distance).toUpperCase() + ' BASKET',
@@ -767,11 +792,9 @@
       }),
       activeTrial: state.ui.round2Trial,
       totalTrials: ROUND2_TRIALS_PER_DISTANCE,
-      fields: round2BlockFields(distance),
+      fields: distanceFields,
       blockSummary: 'Record 10 shots for each distance. Then choose which stretch worked best.',
-      topControls: '<div class="kiosk-stretch-row">' +
-        selectField('Which stretch worked best for this distance?', 'r2_' + distance + '_stretch', ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
-      '</div>',
+      afterShotsControls: afterShotsControls,
       bottomNote: 'Round 2 total: ' + countFields(r2ShotFields()) + ' / ' + r2ShotFields().length + ' shots and ' + countFields(r2StretchFields()) + ' / ' + r2StretchFields().length + ' stretch choices recorded'
     });
   }
@@ -804,6 +827,7 @@
         '<div class="ten-shot-tiles">' + renderShotTiles(config.roundKey, config.fields, activeIndex) + '</div>' +
         '<div class="result-legend">' + renderResultLegend() + '</div>' +
       '</div>' +
+      (config.afterShotsControls || '') +
       '<div class="kiosk-controls">' +
         '<button class="secondary kiosk-back" type="button" data-local-back="true">Back</button>' +
         '<button class="primary kiosk-next" type="button" data-kiosk-round="' + config.roundKey + '" data-kiosk-next="true">' + escapeHtml(getKioskNextLabel(config.roundKey)) + '</button>' +
@@ -826,9 +850,9 @@
       if (isComplete && !needsStretch) classes.push('complete');
       if (needsStretch) classes.push('needs-stretch');
       if (locked) classes.push('locked');
-      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + config.roundKey + '" data-kiosk-block-button="' + escapeHtml(option.value) + '"' + (locked ? ' disabled aria-disabled="true"' : '') + '>' +
+      return '<button type="button" class="' + classes.join(' ') + '" data-kiosk-round="' + config.roundKey + '" data-kiosk-block-button="' + escapeHtml(option.value) + '"' + (locked ? ' aria-disabled="true"' : '') + '>' +
         '<strong>' + escapeHtml(option.label) + '</strong>' +
-        '<span>' + (locked ? 'Locked' : complete + ' / ' + fields.length + (needsStretch ? ' + stretch' : '')) + '</span>' +
+        '<span>' + (locked ? escapeHtml(getRound1LockMessage(option.value)) : complete + ' / ' + fields.length + (needsStretch ? ' + stretch' : '')) + '</span>' +
       '</button>';
     }).join('');
   }
@@ -1099,19 +1123,17 @@
       });
       if (!allSafe) return 'Check every safety box before launching.';
     }
+    if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for Short, Medium, and Long stretch.';
+    if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots and choose the best stretch for each distance.';
     return '';
   }
 
   function getScreenWarning(key) {
-    if (key === 'round1' && countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record 10 shots for each stretch.';
-    if (key === 'round2' && countFields(r2CompletionFields()) < r2CompletionFields().length) return 'Round 2 is not complete yet. Record 10 shots for each distance and choose which stretch worked best for each distance.';
     return '';
   }
 
   function getSubmissionWarning() {
     var missing = [];
-    if (countFields(r1Fields()) < r1Fields().length) missing.push('Round 1 trials');
-    if (countFields(r2CompletionFields()) < r2CompletionFields().length) missing.push('Round 2 shots or stretch choices');
     if (countFields(['fbd_before_up', 'fbd_before_down', 'fbd_air_down', 'fbd_air_back']) < 4) missing.push('force diagram labels');
     if (missing.length) return 'Missing: ' + missing.join(', ') + '.';
     return '';
@@ -1121,6 +1143,11 @@
     if (!state.responses.period) return 'Choose your period before submitting.';
     if (!state.responses.group_name) return 'Enter your group name before submitting.';
     if (countMemberNames(state.responses.member_names) < 2) return 'Enter at least 2 group member names before submitting. Groups should be 3-4. Ask your teacher if your group has only 2.';
+    var allSafe = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft'].every(function (field) { return !!state.responses[field]; });
+    if (!allSafe) return 'Check every safety box before submitting.';
+    if (countFields(r1Fields()) < r1Fields().length) return 'Round 1 is not complete yet. Record all 30 shots before submitting.';
+    if (countFields(r2ShotFields()) < r2ShotFields().length) return 'Round 2 is not complete yet. Record all 30 shots before submitting.';
+    if (countFields(r2StretchFields()) < r2StretchFields().length) return 'Round 2 is not complete yet. Choose which stretch worked best for each distance before submitting.';
     return '';
   }
 

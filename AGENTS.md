@@ -1,7 +1,7 @@
 # AGENTS.md - CPS Rubber Band Basket Launch Web App
 
 ## Project Goal
-Build a first-pass Google Apps Script web app for a 9th grade rubber band basket launch lab. Students use iPads, work in groups, record simple launch data, answer energy/force questions, confirm emailed video evidence, and submit to Google Sheets.
+Build a first-pass Google Apps Script web app for a 9th grade rubber band basket launch lab. Students use iPads, work in groups, record simple launch data, answer energy/force questions, and submit to Google Sheets.
 
 ## Classroom Priorities
 - iPad-friendly, low-reading, and easy to tap.
@@ -16,7 +16,7 @@ Build a first-pass Google Apps Script web app for a 9th grade rubber band basket
 - Use raw Google Apps Script files only: `Code.gs`, `Index.html`, `Styles.html`, and `Script.html`.
 - Use Google Sheets tabs: `Submissions_Raw`, `Best_Scores`, `Dashboard`, `Settings`, and `Troubleshooting_Log`.
 - Period choices are limited to 1st hour and 7th hour.
-- Video evidence is emailed to `patelk07@psdr3.org`; do not build video upload.
+- Video evidence is no longer checked in the student-facing app. Do not build video upload. Legacy video columns stay only for Sheet compatibility.
 - Free-body diagram labels use dropdowns, not drag-and-drop.
 - Do not add npm, frameworks, login, external databases, scheduled jobs, or extra polish beyond the handoff.
 

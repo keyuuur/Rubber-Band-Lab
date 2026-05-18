@@ -5,10 +5,10 @@
 Project: CPS Rubber Band Basket Launch Lab  
 Local folder: `C:\Users\Keyur\Desktop\Claude Code YEET\Concepts of Phys Games\Rubber Band Lab LOCAL`  
 GitHub repo: `https://github.com/keyuuur/Rubber-Band-Lab`  
-Current branch: `main`  
-Current local revision: ten-shot trial update plus color-strip kiosk UI for Round 1 and Round 2
+Current branch: `first-hour-adjustments`
+Current local revision: first-hour classroom safety and submission reliability pass
 
-This is a Google Apps Script classroom web app for a 9th grade Concepts of Physical Systems rubber band/pom-pom launch lab. Students work in groups on iPads, record simple launch data, answer energy and force questions, confirm video evidence was emailed, and submit one group response to Google Sheets.
+This is a Google Apps Script classroom web app for a 9th grade Concepts of Physical Systems rubber band/pom-pom launch lab. Students work in groups on iPads, record simple launch data, answer energy and force questions, and submit one group response to Google Sheets.
 
 ## Current Files
 
@@ -42,12 +42,10 @@ Student flow:
 5. Round 1 Pattern
 6. Energy Vocabulary
 7. Round 2 at 3 ft, 6 ft, and 9 ft
-8. Video Email
-9. Free-Body Diagrams
-10. Energy Conservation
-11. Final Conclusion
-12. Review / Submit
-13. Submitted proof or Backup Proof Only
+8. Free-Body Diagrams
+9. Energy Conservation / Final Conclusion
+10. Review / Submit
+11. Submitted proof or Backup Proof Only
 
 Important classroom behavior:
 
@@ -59,9 +57,9 @@ Important classroom behavior:
 - Round 2 distances are 3 ft, 6 ft, and 9 ft.
 - Round 2 now records 10 quick-tap shots for each distance using the same kiosk UI, plus the main stretch used for each distance.
 - Round 2 no longer shows per-distance video questions. The old `R2_*_Video` raw columns remain for schema compatibility, but scoring/review completeness now uses stretch plus shot fields only.
-- Trial result choices include `Made`, `Missed short`, `Missed long`, and `Missed side`.
+- Trial result choices include `Made` and `Missed`.
 - Round 1 and Round 2 both state: `Bank shots count as Made if the pom-pom lands in the basket.`
-- Video evidence is email-only to `patelk07@psdr3.org`; there is no upload feature.
+- Video evidence is retired from the student-facing app; there is no upload feature and no in-app video check.
 - Backup proof wording is `Backup Proof Only`, not `Emergency Submit`.
 - Backup Proof Only clearly says the work has `NOT been submitted` to Mr. Patel's Sheet.
 - Backup Proof Only Back/Return behavior returns students to the lab.
@@ -187,7 +185,7 @@ Local deterministic tests:
 - perfect scoring returns 20/20
 - Round 2 raw fields remain 36 while completion fields are 33
 - Round 2 visible per-distance video prompt is absent from `Script.html`
-- video Yes with blank sender email rejects
+- video evidence is retired from the student-facing app; legacy video columns remain only for Sheet compatibility
 - group key normalization works
 - no-name and one-name members reject
 - two/three/four member names accept
