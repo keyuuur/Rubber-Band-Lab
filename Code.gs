@@ -1,6 +1,6 @@
 var SERVER_CONFIG = {
-  appVersion: '2026-05-12-ten-shot-trials',
-  scoreVersion: 'rbbl-score-v2',
+  appVersion: '2026-05-17-first-hour-safety-pass',
+  scoreVersion: 'rbbl-score-v3-first-hour',
   teacherEmail: 'patelk07@psdr3.org',
   allowedPeriods: ['1st hour', '7th hour'],
   round1TrialsPerStretch: 10,
@@ -52,11 +52,21 @@ var BEST_COLUMNS = [
 ];
 
 var LOG_COLUMNS = ['Timestamp', 'Type', 'Message', 'Details'];
-var RESULT_CHOICES = ['Made', 'Missed short', 'Missed long', 'Missed side'];
+var RESULT_CHOICES = ['Made', 'Missed'];
 var YES_NO_CHOICES = ['Yes', 'No'];
 var STRETCH_CHOICES = ['Small', 'Medium', 'Large'];
 var FORCE_CHOICES = ['Applied force', 'Magnetic force', 'Friction', 'Air resistance', 'Gravity', 'Normal force'];
 var MAX_RAW_JSON_LENGTH = 30000;
+
+function getSafetyFieldNames_() {
+  return [
+    'safety_pompom_only',
+    'safety_not_at_people',
+    'setup_basket_backboard',
+    'setup_launch_line',
+    'setup_round1_6ft'
+  ];
+}
 
 function getRound1FieldNames_() {
   var fields = [];
@@ -202,11 +212,7 @@ function scoreSubmission(payload) {
     percent: 0
   };
 
-  var safetyFields = [
-    'safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard',
-    'setup_launch_line', 'setup_round1_6ft', 'setup_video_required'
-  ];
-  score.safety = safetyFields.every(function(field) { return isYesish_(payload[field]); }) ? 2 : 0;
+  score.safety = getSafetyFieldNames_().every(function(field) { return isYesish_(payload[field]); }) ? 2 : 0;
 
   var r1Fields = getRound1FieldNames_();
   var r1Count = countFilled_(payload, r1Fields);
@@ -219,7 +225,7 @@ function scoreSubmission(payload) {
   var r2Fields = getRound2CompletionFieldNames_();
   var r2Count = countFilled_(payload, r2Fields);
   score.round2Video = r2Count >= r2Fields.length ? 2 : (r2Count >= (ROUND2_TRIALS_PER_DISTANCE + 1) * 2 ? 1 : 0);
-  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && hasText_(payload.video_sender_email)) score.round2Video += 1;
+  score.round2Video += 1;
 
   if (equalsChoice_(payload.fbd_before_up, 'Normal force')) score.fbd += 1;
   if (equalsChoice_(payload.fbd_before_down, 'Gravity')) score.fbd += 1;
@@ -380,19 +386,44 @@ function validateSubmission_(payload) {
     };
   }
 
-  if (equalsChoice_(payload.video_email_confirmed, 'Yes') && !hasText_(payload.video_sender_email)) {
+  var missingSafety = getSafetyFieldNames_().filter(function(field) {
+    return !isYesish_(payload[field]);
+  });
+  if (missingSafety.length) {
     return {
       ok: false,
-      errorCode: 'VIDEO_EMAIL_REQUIRED',
-      message: 'If your group emailed video evidence, enter the school email that sent it.'
+      errorCode: 'SAFETY_INCOMPLETE',
+      message: 'Check every safety box before submitting.',
+      missingFields: missingSafety
     };
   }
 
-  if (hasText_(payload.video_sender_email) && !isEmailLike_(payload.video_sender_email)) {
+  var r1Fields = getRound1FieldNames_();
+  if (countFilled_(payload, r1Fields) < r1Fields.length) {
     return {
       ok: false,
-      errorCode: 'INVALID_VIDEO_EMAIL',
-      message: 'Enter the school email that sent the video, like name@psdr3.org.'
+      errorCode: 'ROUND1_INCOMPLETE',
+      message: 'Round 1 is not complete yet. Record all 30 shots before submitting.'
+    };
+  }
+
+  var r2ShotFields = getRound2ShotFieldNames_();
+  if (countFilled_(payload, r2ShotFields) < r2ShotFields.length) {
+    return {
+      ok: false,
+      errorCode: 'ROUND2_SHOTS_INCOMPLETE',
+      message: 'Round 2 is not complete yet. Record all 30 shots before submitting.'
+    };
+  }
+
+  var r2StretchFields = ROUND2_DISTANCE_KEYS.map(function(distance) {
+    return 'r2_' + distance + '_stretch';
+  });
+  if (countFilled_(payload, r2StretchFields) < r2StretchFields.length) {
+    return {
+      ok: false,
+      errorCode: 'ROUND2_STRETCH_INCOMPLETE',
+      message: 'Round 2 is not complete yet. Choose which stretch worked best for each distance before submitting.'
     };
   }
 
@@ -587,7 +618,6 @@ function buildReviewFlags_(payload, score) {
   var reasons = [];
   var r1Fields = getRound1FieldNames_();
   var r2Fields = getRound2CompletionFieldNames_();
-  if (!equalsChoice_(payload.video_email_confirmed, 'Yes')) reasons.push('Video email not confirmed');
   if (score.total < 12) reasons.push('Low score');
   if (countFilled_(payload, r1Fields) < r1Fields.length) reasons.push('Round 1 trials incomplete');
   if (countFilled_(payload, r2Fields) < r2Fields.length) reasons.push('Round 2 entries incomplete');
@@ -650,8 +680,15 @@ function payloadFingerprint_(payload) {
   var ignored = {
     user_agent: true,
     emergency_mode_used: true,
-    server_submission_id: true
+    server_submission_id: true,
+    setup_video_required: true,
+    video_email_confirmed: true,
+    video_sender_email: true,
+    video_clip_description: true
   };
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    ignored['r2_' + distance + '_video'] = true;
+  });
   var cleaned = sanitizePayload_(payload || {});
   var parts = [];
   Object.keys(schema).sort().forEach(function(field) {
@@ -664,39 +701,48 @@ function payloadFingerprint_(payload) {
 
 function rebuildDashboard_(dashboardSheet, bestSheet) {
   dashboardSheet.clear();
-  dashboardSheet.getRange(1, 1, 1, 7).setValues([['Period', 'Groups', 'Average Best Score', 'Video Confirmed', 'Needs Review', 'Last Updated', 'Teacher Email']]);
+  dashboardSheet.getRange(1, 1, 1, 7).setValues([['Period', 'Groups', 'Average Best Score', 'Video App Check', 'Needs Review', 'Last Updated', 'Teacher Email']]);
 
   var bestValues = bestSheet.getDataRange().getValues();
   if (bestValues.length < 2) {
-    dashboardSheet.getRange(2, 1, 1, 7).setValues([['No submissions yet', '', '', '', '', new Date(), TEACHER_EMAIL]]);
+    dashboardSheet.getRange(2, 1, 1, 7).setValues([['No submissions yet', '', '', 'Retired from app', '', new Date(), TEACHER_EMAIL]]);
     return;
   }
 
   var headers = bestValues[0];
   var stats = {};
   ALLOWED_PERIODS.forEach(function(period) {
-    stats[period] = { groups: 0, scoreSum: 0, video: 0, review: 0 };
+    stats[period] = { groups: 0, scoreSum: 0, review: 0 };
   });
 
   for (var i = 1; i < bestValues.length; i++) {
     var row = bestValues[i];
-    var period = row[headers.indexOf('Period')] || 'Unknown';
-    if (!stats[period]) stats[period] = { groups: 0, scoreSum: 0, video: 0, review: 0 };
+    var periodIndex = headers.indexOf('Period');
+    var scoreIndex = headers.indexOf('Best_Score_Total');
+    var reviewIndex = headers.indexOf('Needs_Review');
+    var period = periodIndex > -1 ? row[periodIndex] || 'Unknown' : 'Unknown';
+    if (!stats[period]) stats[period] = { groups: 0, scoreSum: 0, review: 0 };
     stats[period].groups += 1;
-    stats[period].scoreSum += Number(row[headers.indexOf('Best_Score_Total')]) || 0;
-    if (row[headers.indexOf('Video_Email_Confirmed')] === 'Yes') stats[period].video += 1;
-    if (row[headers.indexOf('Needs_Review')] === true || row[headers.indexOf('Needs_Review')] === 'TRUE') stats[period].review += 1;
+    stats[period].scoreSum += scoreIndex > -1 ? Number(row[scoreIndex]) || 0 : 0;
+    if (reviewIndex > -1 && (row[reviewIndex] === true || row[reviewIndex] === 'TRUE')) stats[period].review += 1;
   }
 
   var summaryRows = Object.keys(stats).map(function(period) {
     var s = stats[period];
-    return [period, s.groups, s.groups ? Math.round((s.scoreSum / s.groups) * 10) / 10 : '', s.video, s.review, new Date(), TEACHER_EMAIL];
+    return [period, s.groups, s.groups ? Math.round((s.scoreSum / s.groups) * 10) / 10 : '', 'Retired from app', s.review, new Date(), TEACHER_EMAIL];
   });
   dashboardSheet.getRange(2, 1, summaryRows.length, 7).setValues(summaryRows);
 
-  var detailStart = summaryRows.length + 4;
+  var detailStart = summaryRows.length + 5;
+  dashboardSheet.getRange(detailStart - 1, 1, 1, 7).setValues([['Generated dashboard. Legacy video columns are kept only for Sheet compatibility; this app does not check video evidence.', '', '', '', '', '', '']]);
   dashboardSheet.getRange(detailStart, 1, 1, BEST_COLUMNS.length).setValues([BEST_COLUMNS]);
-  dashboardSheet.getRange(detailStart + 1, 1, bestValues.length - 1, BEST_COLUMNS.length).setValues(bestValues.slice(1));
+  var detailRows = bestValues.slice(1).map(function(row) {
+    return BEST_COLUMNS.map(function(header) {
+      var index = headers.indexOf(header);
+      return index > -1 ? row[index] : '';
+    });
+  });
+  dashboardSheet.getRange(detailStart + 1, 1, detailRows.length, BEST_COLUMNS.length).setValues(detailRows);
   dashboardSheet.autoResizeColumns(1, Math.min(BEST_COLUMNS.length, 12));
 }
 
@@ -736,12 +782,14 @@ function ensureSheetWithHeaders_(ss, name, headers) {
 
 function writeSettings_(sheet) {
   sheet.clear();
-  sheet.getRange(1, 1, 8, 2).setValues([
+  sheet.getRange(1, 1, 10, 2).setValues([
     ['Setting', 'Value'],
     ['Allowed_Periods', ALLOWED_PERIODS.join(', ')],
     ['Teacher_Email', TEACHER_EMAIL],
     ['Round1_Trials_Per_Stretch', ROUND1_TRIALS_PER_STRETCH],
     ['Round2_Trials_Per_Distance', ROUND2_TRIALS_PER_DISTANCE],
+    ['Video_Evidence_App_Check', 'Retired from student app; legacy columns kept only for compatibility'],
+    ['Generated_Tab_Note', 'Settings and Dashboard are generated by Apps Script'],
     ['App_Version', APP_VERSION],
     ['Score_Version', SCORE_VERSION],
     ['Last_Checked', new Date()]
@@ -787,7 +835,32 @@ function sanitizePayload_(payload) {
       cleaned[key] = value;
     }
   });
+  normalizeShotResultFields_(cleaned);
   return cleaned;
+}
+
+function normalizeShotResultFields_(payload) {
+  getRound1FieldNames_().concat(getRound2ShotFieldNames_()).forEach(function(field) {
+    if (hasText_(payload[field])) payload[field] = normalizeShotResult_(payload[field]);
+  });
+}
+
+function getRound2ShotFieldNames_() {
+  var fields = [];
+  ROUND2_DISTANCE_KEYS.forEach(function(distance) {
+    for (var i = 1; i <= ROUND2_TRIALS_PER_DISTANCE; i++) {
+      fields.push('r2_' + distance + '_t' + i);
+    }
+  });
+  return fields;
+}
+
+function normalizeShotResult_(value) {
+  var normalized = normalizeText_(value);
+  if (!normalized) return '';
+  if (normalized === 'made') return 'Made';
+  if (normalized === 'missed' || normalized === 'missed short' || normalized === 'missed long' || normalized === 'missed side') return 'Missed';
+  return value;
 }
 
 function getHeaders_(sheet) {

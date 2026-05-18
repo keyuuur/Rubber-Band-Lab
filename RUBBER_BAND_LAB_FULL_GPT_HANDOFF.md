@@ -86,8 +86,8 @@ Do not change these unless Keyur explicitly asks:
 - Keep period options limited to:
   - `1st hour`
   - `7th hour`
-- Keep video evidence email-only to `patelk07@psdr3.org`.
-- Do not build video upload.
+- Video evidence is retired from the student-facing app.
+- Do not build video upload or add a Video Email screen back.
 - Keep the wording `Backup Proof Only`.
 - Do not call it `Emergency Submit`.
 - Backup Proof Only must clearly say the work was NOT submitted to the Sheet.
@@ -110,10 +110,9 @@ The current app uses 10 classroom-facing stations:
 4. Round 1
 5. Analysis 1
 6. Round 2
-7. Video Email
-8. FBD
-9. Final Qs
-10. Review & Submit
+7. FBD
+8. Final Qs
+9. Review & Submit
 
 Older versions had 12 internal screens. The current refactor combines:
 
@@ -170,11 +169,10 @@ Round 2:
 
 Video Evidence:
 
-- Students record video on the iPad outside the app.
-- Students email video evidence to `patelk07@psdr3.org`.
-- The app records whether they say they emailed it, the sender email, and what the clip showed.
-- If students mark video email as `Yes`, sender email is required.
-- The app cannot verify Gmail actually received a video.
+- Video evidence is retired from the student-facing app.
+- The app does not request, verify, or score video evidence.
+- Legacy video columns remain only for Sheet compatibility.
+- The retired video point is auto-credited so the total remains 20.
 
 FBD:
 
@@ -300,7 +298,7 @@ It is intentionally basic:
 - Period summary.
 - Number of groups.
 - Average best score.
-- Video confirmed count.
+- Video app-check retired indicator.
 - Needs review count.
 - Best-score detail rows.
 
@@ -333,7 +331,7 @@ Breakdown:
 - Safety/setup: 2
 - Round 1 data: 3
 - Round 1 science/energy: 3
-- Round 2 + video: 3
+- Round 2 data plus retired video auto-credit: 3
 - Free-body diagrams: 4
 - Energy conservation: 3
 - Final conclusion: 2
@@ -349,7 +347,7 @@ Current scoring details:
 - Safety/setup is all-or-nothing for 2 points.
 - Round 1 data gives partial credit based on number of filled Round 1 trial fields.
 - Round 1 science gives points for pattern, elastic potential, and elastic-to-kinetic vocabulary.
-- Round 2 gives data credit based on completion fields, plus one video-confirmation point.
+- Round 2 gives data credit based on completion fields, plus one retired video auto-credit point.
 - FBD gives one point per correct force dropdown.
 - Conservation gives one point per correct true/false.
 - Final gives one point for main idea and one for farther baskets usually needing more stretch.
@@ -360,8 +358,8 @@ Client-side:
 
 - Group Info hard-blocks Next if period, group name, or 2 member names are missing.
 - Safety hard-blocks Next until all safety boxes are checked.
-- Video Email hard-blocks if video is marked Yes with blank or malformed sender email.
-- Missing shot/science answers are soft warnings so students can submit incomplete work and receive reduced score.
+- Round 1 and Round 2 lab shot data hard-blocks until complete.
+- Missing science answers are soft warnings so students can submit complete lab data and receive reduced score.
 
 Server-side:
 
@@ -370,9 +368,8 @@ Server-side:
 - Rejects invalid periods.
 - Rejects invalid dropdown/result values.
 - Rejects too-long text.
-- Rejects malformed video sender email.
 - Rejects fewer than 2 member names.
-- Rejects video Yes with blank sender email.
+- Rejects incomplete safety checks and incomplete Round 1/Round 2 lab data.
 
 Data safety:
 
@@ -541,8 +538,8 @@ At commit `c9fcc77`, local checks passed:
   - Reset disabled on Backup Proof Only
   - Group Info blocks missing / one-member group
   - Safety blocks unchecked setup
-  - Video Yes with blank/malformed email blocks
-  - Incomplete work shows reduced local score
+  - Video Email screen is absent
+  - Missing science work shows reduced local score after required lab data is complete
 - Refresh simulation:
   - Unfinished work restores after reload
   - Submitted proof restores after reload with minimal proof details
@@ -550,7 +547,6 @@ At commit `c9fcc77`, local checks passed:
   - Perfect payload scores 20
   - Invalid period rejects
   - Invalid result rejects
-  - Bad video sender email rejects
   - One member rejects
   - Two members accepted
   - Formula prefix escaping works
@@ -596,13 +592,12 @@ Ask these before making the next improvement pass:
 
 1. Where did students get stuck?
 2. Did students understand Backup Proof Only?
-3. Did students remember to email videos?
-4. Was 10 shots per block too much, too little, or just right?
-5. Did the kiosk auto-advance help or confuse students?
-6. Did the teacher need more useful Dashboard information?
-7. Did the Sheet collect clean enough data?
-8. Were there iPad sizing/tapping issues?
-9. Did students submit multiple times, and was that okay?
+3. Was 10 shots per block too much, too little, or just right?
+4. Did the kiosk auto-advance help or confuse students?
+5. Did the teacher need more useful Dashboard information?
+6. Did the Sheet collect clean enough data?
+7. Were there iPad sizing/tapping issues?
+8. Did students submit multiple times, and was that okay?
 10. Did any group lose work or fail to submit?
 
 ## Suggested Output Style For Future GPT Work

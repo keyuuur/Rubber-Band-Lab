@@ -46,7 +46,7 @@ The current ten-shot revision generates the trial columns instead of manually li
   - `R2_6ft_Stretch`, `R2_6ft_T1` through `R2_6ft_T10`, `R2_6ft_Video`
   - `R2_9ft_Stretch`, `R2_9ft_T1` through `R2_9ft_T10`, `R2_9ft_Video`
 
-The visible Round 2 shot-entry screen no longer asks for per-distance video. Video evidence is handled only on the separate Video Email screen. The legacy `R2_*_Video` columns remain so existing Sheet structure does not break.
+The visible Round 2 shot-entry screen no longer asks for per-distance video. Video evidence is retired from the student-facing app. The legacy `R2_*_Video` columns remain so existing Sheet structure does not break.
 
 Other columns include identifiers, score subtotals, student answers, review flags, version fields, and `Raw_JSON`.
 
@@ -93,11 +93,11 @@ Columns:
 6. Test one dummy student submission before class.
 7. Make a QR code or post the web app URL for students.
 
-Students still email video evidence separately to `patelk07@psdr3.org`. This app does not upload or store videos.
+Video evidence is not checked by the student-facing app. This app does not upload or store videos. Legacy video columns are kept only for Sheet compatibility.
 
 ## 5. Known limitations
 
-- The app cannot verify that the Gmail video was really sent. It only records the student confirmation and sender email.
+- The app does not verify, request, or score student video evidence in the current first-hour-adjustments version.
 - Backup Proof Only is local evidence on the iPad. It does not write to the Sheet.
 - The local score estimate is meant for review. The server score in the Sheet is authoritative.
 - Apps Script must be bound to a Google Sheet or `ensureSheets_` will report that there is no active spreadsheet.
@@ -108,8 +108,8 @@ Students still email video evidence separately to `patelk07@psdr3.org`. This app
 
 1. Perfect submission should score 20/20 and appear in `Submissions_Raw`, `Best_Scores`, and `Dashboard`.
 2. Missing Round 1 answers should warn students and reduce the Round 1 data score.
-3. Marking video email as Yes without sender email should return a clear validation error.
-4. Marking video email as No should submit but lose the video point and flag review.
+3. The student app should not show a Video Email screen or video confirmation fields.
+4. A perfect current-flow submission should still score 20/20 because the retired video point is auto-credited.
 5. Wrong free-body diagram labels should reduce the force score.
 6. Double-click or retry with the same `Client_Attempt_ID` should not append a duplicate raw row.
 7. Same group with a new attempt should append raw data and update `Best_Scores` only if higher or tied.
