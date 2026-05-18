@@ -658,29 +658,31 @@
   }
 
   function renderStart() {
-    return screenWrap('Start: Group Info',
-      'Enter your group information. Your group will submit one lab write-up together.',
+    return screenWrap('GROUP INFO',
+      'Let\'s get your group set up. Add one name at a time, then start the lab.',
       '<div class="field-grid">' +
         selectField('Period', 'period', ['', '1st hour', '7th hour'], 'Choose period') +
         textField('Group name', 'group_name', 'Example: Energy Eagles') +
       '</div>' +
-      renderMemberNameBuilder() +
-      '<div class="mini-note">Work in groups of 3-4. One submission per group. Ask your teacher if your group has only 2.</div>');
+      renderMemberNameBuilder());
   }
 
   function renderMemberNameBuilder() {
     var names = getMemberNameList();
+    var enoughNames = names.length >= 2;
     return '<section class="member-builder">' +
-      '<h3>Group member names</h3>' +
-      '<p>Add one group member at a time. First names are enough.</p>' +
-      '<div class="member-add-row">' +
-        '<input type="text" data-member-draft="true" placeholder="Type one name">' +
-        '<button class="primary" type="button" data-add-member="true">Add Name</button>' +
+      '<div class="member-builder-header">' +
+        '<div><h3>ADD ONE NAME AT A TIME</h3><p>Type one student\'s first name, tap Add Name, then repeat.</p></div>' +
+        '<div class="member-count-badge ' + (enoughNames ? 'ok' : 'needs') + '">' + names.length + ' added</div>' +
       '</div>' +
-      '<div class="member-count">' + names.length + ' added. 2 names minimum. Groups are usually 3-4.</div>' +
+      '<div class="member-add-row">' +
+        '<input type="text" data-member-draft="true" placeholder="One student name" aria-label="One student name">' +
+        '<button class="primary" type="button" data-add-member="true">Add Name +</button>' +
+      '</div>' +
+      '<div class="member-expectation">2 minimum. Groups are usually 3-4.</div>' +
       '<div class="member-list">' + (names.length ? names.map(function (name, index) {
-        return '<div class="member-pill"><span>' + escapeHtml(name) + '</span><button class="secondary small" type="button" data-remove-member="' + index + '">Remove</button></div>';
-      }).join('') : '<div class="member-empty">No names added yet.</div>') + '</div>' +
+        return '<div class="member-pill"><span class="member-avatar">' + (index + 1) + '</span><span class="member-name">' + escapeHtml(name) + '</span><button class="secondary small" type="button" data-remove-member="' + index + '">Remove</button></div>';
+      }).join('') : '<div class="member-empty">No names added yet. Add one student at a time.</div>') + '</div>' +
     '</section>';
   }
 
@@ -776,10 +778,11 @@
     var stretchAnswered = !!state.responses[stretchField];
     var afterShotsControls = shotsComplete
       ? '<div class="kiosk-stretch-row after-shots' + (stretchAnswered ? '' : ' needs-answer') + '">' +
-          (!stretchAnswered ? '<p class="inline-blocker">Choose which stretch worked best before moving on.</p>' : '') +
-          selectField('Which stretch worked best for this distance?', stretchField, ['', 'Small', 'Medium', 'Large'], 'Choose stretch') +
+          '<div class="stretch-question-title">After 10 shots</div>' +
+          (!stretchAnswered ? '<p class="inline-blocker">Choose which stretch worked best before moving on.</p>' : '<p class="inline-success">Stretch choice recorded.</p>') +
+          renderStretchChoiceCards(stretchField) +
         '</div>'
-      : '<div class="kiosk-stretch-row after-shots pending">Finish all 10 shots for this distance. Then choose which stretch worked best.</div>';
+      : '<div class="kiosk-stretch-row after-shots pending"><strong>Stretch choice comes after the shots.</strong><span>Finish all 10 shots for this distance first.</span></div>';
     return renderTenShotKiosk({
       roundKey: 'round2',
       title: 'ROUND 2 - ' + distanceLabel(distance).toUpperCase() + ' BASKET',
@@ -804,6 +807,8 @@
     var activeField = config.fields[activeIndex];
     var activeValue = normalizeShotResult(state.responses[activeField] || '');
     var infoText = 'Made means the pom-pom lands in the basket. Missed means it did not land in the basket. Bank shots count as Made.';
+    var activeBlockLabel = getActiveBlockLabel(config);
+    var focusLabel = config.roundKey === 'round2' ? 'Current distance' : 'Current stretch';
 
     return '<section class="kiosk-screen">' +
       '<div class="kiosk-header">' +
@@ -817,10 +822,14 @@
           '<button class="info-button" type="button" data-info-alert="' + escapeHtml(infoText) + '">Info</button>' +
         '</div>' +
       '</div>' +
+      '<div class="kiosk-focus-card">' +
+        '<div><span>' + focusLabel + '</span><strong>' + escapeHtml(activeBlockLabel) + '</strong></div>' +
+        '<div><span>Current shot</span><strong>Shot ' + (activeIndex + 1) + ' of ' + config.totalTrials + '</strong></div>' +
+      '</div>' +
       '<div class="kiosk-block-buttons">' + renderBlockButtons(config) + '</div>' +
       '<div class="kiosk-context">' + escapeHtml(config.blockSummary) + '</div>' +
       (config.topControls || '') +
-      '<p class="result-prompt">Tap a result for Shot ' + (activeIndex + 1) + '</p>' +
+      '<p class="result-prompt">Tap Made or Missed for Shot ' + (activeIndex + 1) + '</p>' +
       '<div class="result-button-grid">' + renderResultButtons(config.roundKey, activeValue) + '</div>' +
       '<div class="ten-shot-section">' +
         '<div class="ten-shot-title"><span></span><strong>TEN-SHOT ENTRY</strong><span></span></div>' +
@@ -855,6 +864,13 @@
         '<span>' + (locked ? escapeHtml(getRound1LockMessage(option.value)) : complete + ' / ' + fields.length + (needsStretch ? ' + stretch' : '')) + '</span>' +
       '</button>';
     }).join('');
+  }
+
+  function getActiveBlockLabel(config) {
+    for (var i = 0; i < config.blockOptions.length; i++) {
+      if (config.blockOptions[i].value === config.blockValue) return config.blockOptions[i].label;
+    }
+    return config.blockValue;
   }
 
   function renderResultButtons(roundKey, activeValue) {
@@ -956,19 +972,26 @@
   function renderReview() {
     var score = estimateScore(state.responses);
     var warning = getSubmissionBlocker() || getSubmissionWarning();
+    var groupDone = !!state.responses.period && !!state.responses.group_name && countMemberNames(state.responses.member_names) >= 2;
+    var safetyDone = ['safety_pompom_only', 'safety_not_at_people', 'setup_basket_backboard', 'setup_launch_line', 'setup_round1_6ft'].every(function (field) { return !!state.responses[field]; });
+    var round1Done = countFields(r1Fields()) >= r1Fields().length;
+    var round2ShotsDone = countFields(r2ShotFields()) >= r2ShotFields().length;
+    var round2StretchDone = countFields(r2StretchFields()) >= r2StretchFields().length;
+    var ready = groupDone && safetyDone && round1Done && round2ShotsDone && round2StretchDone;
     return screenWrap('Review and Submit',
       'Check your group work. The score shown here is an estimate. Mr. Patel\'s Sheet calculates the final score.',
-      '<div class="score-box">' + score.total + ' / 20</div>' +
+      '<div class="review-score-row"><div class="score-box">' + score.total + ' / 20</div><p>Estimated score only. The Sheet gives the final score after submit.</p></div>' +
       (warning ? '<p class="warning-text">' + warning + '</p>' : '') +
-      '<div class="review-list">' +
-        reviewItem('Period', state.responses.period || 'Missing') +
-        reviewItem('Group', state.responses.group_name || 'Missing') +
-        reviewItem('Members', state.responses.member_names || 'Missing') +
-        reviewItem('Round 1 shots', countFields(r1Fields()) + ' / ' + r1Fields().length + ' shots') +
-        reviewItem('Round 2 shots', countFields(r2ShotFields()) + ' / ' + r2ShotFields().length + ' shots') +
-        reviewItem('Round 2 stretch choices', countFields(r2StretchFields()) + ' / ' + r2StretchFields().length + ' choices') +
-        reviewItem('Free-body answers', [state.responses.fbd_before_up, state.responses.fbd_before_down, state.responses.fbd_air_down, state.responses.fbd_air_back].filter(Boolean).join(', ') || 'Missing') +
-        reviewItem('Conservation answers', [state.responses.conservation_q1, state.responses.conservation_q2, state.responses.conservation_q3].filter(Boolean).join(', ') || 'Missing') +
+      '<div class="review-checklist">' +
+        reviewChecklistItem('Group Info', groupDone, (state.responses.period || 'Missing period') + ' | ' + (state.responses.group_name || 'Missing group') + ' | ' + countMemberNames(state.responses.member_names) + ' names') +
+        reviewChecklistItem('Safety', safetyDone, safetyDone ? 'All safety boxes checked' : 'Check every safety box') +
+        reviewChecklistItem('Prediction', !!state.responses.prediction_choice, state.responses.prediction_choice ? 'Prediction selected' : 'Prediction can help your science score') +
+        reviewChecklistItem('Round 1', round1Done, countFields(r1Fields()) + ' / ' + r1Fields().length + ' shots recorded') +
+        reviewChecklistItem('Analysis 1', countFields(['r1_pattern_choice', 'r1_most_elastic_potential_choice', 'energy_blank_1', 'energy_blank_2']) >= 4, countFields(['r1_pattern_choice', 'r1_most_elastic_potential_choice', 'energy_blank_1', 'energy_blank_2']) + ' / 4 answered') +
+        reviewChecklistItem('Round 2', round2ShotsDone && round2StretchDone, countFields(r2ShotFields()) + ' / ' + r2ShotFields().length + ' shots, ' + countFields(r2StretchFields()) + ' / ' + r2StretchFields().length + ' stretch choices') +
+        reviewChecklistItem('FBD', countFields(['fbd_before_up', 'fbd_before_down', 'fbd_air_down', 'fbd_air_back']) >= 4, countFields(['fbd_before_up', 'fbd_before_down', 'fbd_air_down', 'fbd_air_back']) + ' / 4 force labels answered') +
+        reviewChecklistItem('Final Qs', countFields(['conservation_q1', 'conservation_q2', 'conservation_q3', 'final_main_idea', 'final_farther_baskets_stretch']) >= 5, countFields(['conservation_q1', 'conservation_q2', 'conservation_q3', 'final_main_idea', 'final_farther_baskets_stretch']) + ' / 5 answered') +
+        reviewChecklistItem('Ready to Submit', ready, ready ? 'Required lab data is complete' : 'Finish required items before submit') +
       '</div>');
   }
 
@@ -1217,8 +1240,32 @@
     }).join('') + '</div>';
   }
 
+  function renderStretchChoiceCards(field) {
+    var choices = [
+      { value: 'Small', label: 'Short', note: 'Short stretch' },
+      { value: 'Medium', label: 'Medium', note: 'Medium stretch' },
+      { value: 'Large', label: 'Long', note: 'Long stretch' }
+    ];
+    return '<div class="stretch-choice-question">Which stretch worked best for this distance?</div>' +
+      '<div class="stretch-choice-grid">' + choices.map(function (choice) {
+        var selected = state.responses[field] === choice.value;
+        return '<button type="button" class="stretch-choice-card ' + (selected ? 'selected' : '') + '" data-choice-field="' + field + '" data-choice-value="' + escapeHtml(choice.value) + '">' +
+          '<span class="stretch-target-icon">&#9678;</span>' +
+          '<strong>' + escapeHtml(choice.label) + '</strong>' +
+          '<span>' + escapeHtml(choice.note) + '</span>' +
+        '</button>';
+      }).join('') + '</div>';
+  }
+
   function reviewItem(label, value) {
     return '<div class="review-item"><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value) + '</span></div>';
+  }
+
+  function reviewChecklistItem(label, complete, value) {
+    return '<div class="review-check-item ' + (complete ? 'complete' : 'missing') + '">' +
+      '<div class="review-check-icon">' + (complete ? '&#10003;' : '!') + '</div>' +
+      '<div><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(value) + '</span></div>' +
+    '</div>';
   }
 
   function proofItem(label, value) {
